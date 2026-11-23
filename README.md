@@ -172,7 +172,7 @@ Pi OS use.
   window or screen.
 - **Windows.** Install a VNC server: TightVNC, UltraVNC or RealVNC Server.
   OpenScreens does not speak RDP, the remote desktop that comes with
-  Windows.
+  Windows; [say if you want it to](https://github.com/burakgon/OpenScreens/issues/2).
 
 A server that encrypts its connections shows a fingerprint the first time,
 as SSH does. Check it against the server's own, and OpenScreens will stop
@@ -189,8 +189,9 @@ for your password without.
 
 The first three are run for real: [`scripts/compat-lab`](scripts/compat-lab)
 starts them in twelve configurations and tests typing, the pointer, the
-clipboard, resizing and encryption against each. If yours behaves
-differently, [say so](https://github.com/burakgon/OpenScreens/issues).
+clipboard, resizing and encryption against each. If you run one of the
+others, or yours behaves differently, [say how it
+went](https://github.com/burakgon/OpenScreens/issues/1).
 
 ### From outside your network
 
@@ -298,7 +299,7 @@ iPhone and iPad.
 **Will there be a version for Windows, Linux or Android?** Not as things
 stand. The interface is SwiftUI and the picture is decoded with Apple's
 video frameworks, so another platform would be another app. If you want
-one, [say which](https://github.com/burakgon/OpenScreens/issues): that is
+one, [say which](https://github.com/burakgon/OpenScreens/issues/3): that is
 how it gets decided.
 
 **How does High Performance mode hold up on a slow connection?** The remote
