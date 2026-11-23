@@ -398,7 +398,12 @@ public actor TransportSession {
 
     // MARK: - Properties
 
-    private let tcp: any RFBConnection
+    /// The byte stream the session runs over. It is replaced once, during
+    /// the handshake, when a security type puts the rest of the session
+    /// inside messages of its own (RSA-AES).
+    private var tcp: any RFBConnection
+    /// What the security type that was negotiated encrypts the stream with.
+    private var streamEncryption: VNCContentEncryption?
     /// Whether the connection was injected by the host instead of the default
     /// direct TCP path. Apple's High Performance media mode needs UDP
     /// reachability and is refused over a custom transport without a datagram path.
@@ -426,6 +431,7 @@ public actor TransportSession {
     /// capability without changing the application-wide negotiation policy.
     private let appleMediaTilesPerFrameOverride: UInt64?
     private let certificateValidationHandler: VNCCertificateValidationHandler?
+    private let serverKeyValidationHandler: VNCServerKeyValidationHandler?
     /// Environment-backed diagnostics and experiment switches are launch-time
     /// configuration. Materializing ProcessInfo.environment copies and bridges
     /// the complete process environment, so never do it on the RTP hot path.
@@ -909,7 +915,8 @@ public actor TransportSession {
         connection: (any RFBConnection)? = nil,
         datagramProvider: AppleMediaDatagramProvider? = nil,
         securityPolicy: VNCSecurityPolicy = .automatic,
-        certificateValidationHandler: VNCCertificateValidationHandler? = nil
+        certificateValidationHandler: VNCCertificateValidationHandler? = nil,
+        serverKeyValidationHandler: VNCServerKeyValidationHandler? = nil
     ) {
         let environment = ProcessInfo.processInfo.environment
         self.runtimeEnvironment = environment
@@ -971,6 +978,7 @@ public actor TransportSession {
         self.password = password
         self.username = username
         self.certificateValidationHandler = certificateValidationHandler
+        self.serverKeyValidationHandler = serverKeyValidationHandler
         self.requestedDisplayCount = min(2, max(1, displayCount))
         self.virtualDisplayName = virtualDisplayName
         self.requestedFrameRate = max(1, min(120, targetFrameRate))
@@ -1021,6 +1029,7 @@ public actor TransportSession {
 
         // Establish TCP
         try await tcp.connect()
+        stateMachine.transportSupportsTLS = await tcp.supportsTLSUpgrade()
         if let connectedPeer = await tcp.remoteEndpointHost() {
             appleMediaRemoteHost = Self.selectAppleMediaRemoteHost(
                 dialHost: dialHost,
@@ -1471,8 +1480,8 @@ public actor TransportSession {
     /// EncryptionInfo record and ComCryption channel arrive.
     public var handshakeInfo: TransportHandshakeInfo {
         let contentEncryption: VNCContentEncryption
-        if stateMachine.selectedSecurityType == .vencrypt {
-            contentEncryption = .tlsX509
+        if let streamEncryption {
+            contentEncryption = streamEncryption
         } else if appleEncryptedControlChannel != nil {
             contentEncryption = .appleComCryption(
                 cipherMode: lastAppleEncryptionInfo?.cipherMode,
@@ -2024,8 +2033,26 @@ public actor TransportSession {
                 port: port,
                 username: username,
                 password: password,
-                certificateValidationHandler: certificateValidationHandler
+                certificateValidationHandler: certificateValidationHandler,
+                requiresTLS: stateMachine.securityPolicy == .requireEncryption
             )
+        case .ra2, .ra2ne, .ra2_256, .ra2ne_256:
+            let secured = try await RSAAESAuthenticator(
+                securityType: securityType,
+                host: tlsIdentityHost,
+                port: port,
+                username: username,
+                password: password,
+                keyValidationHandler: serverKeyValidationHandler
+            ).authenticate(connection: tcp)
+            if let secured {
+                // Everything from the result of the sign-in on is inside
+                // encrypted messages.
+                tcp = secured
+                streamEncryption = .rsaAES(keyBits: securityType == .ra2_256 ? 256 : 128)
+            }
+            log.info("Authentication completed for \(securityType)")
+            return
         case .srp:
             authenticator = SRPAuthenticator(
                 username: username ?? "user",
@@ -2046,6 +2073,9 @@ public actor TransportSession {
 
         let authResult = try await authenticator.authenticate(connection: tcp)
         appleSessionKey = authResult.appleSessionKey
+        if authResult.establishedTLS {
+            streamEncryption = .tlsX509
+        }
         log.info("Authentication completed for \(securityType)")
     }
 

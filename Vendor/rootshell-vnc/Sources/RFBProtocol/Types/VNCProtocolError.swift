@@ -28,6 +28,14 @@ public enum VNCProtocolError: Error, Sendable, Equatable, LocalizedError {
     /// Wrapped as a string description for Sendable + Equatable conformance.
     case ioError(String)
 
+    /// The reason a sign-in ends with when the server wants a user name and
+    /// none was given: a host shows a field for one and tries again.
+    public static let usernameRequiredReason = "This server requires a user name and password"
+
+    /// The reason a sign-in ends with when the host did not vouch for the
+    /// certificate or the key the server presented.
+    public static let serverIdentityRejectedReason = "The server's identity was not trusted"
+
     // MARK: - LocalizedError
 
     public var errorDescription: String? {

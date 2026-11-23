@@ -1566,6 +1566,70 @@ final class ConnectionStateMachineTests: XCTestCase {
         }
     }
 
+    // MARK: - RSA-AES
+
+    private func selection(
+        from types: [SecurityType],
+        policy: VNCSecurityPolicy = .automatic,
+        transportSupportsTLS: Bool = true
+    ) -> SecurityType? {
+        var sm = ConnectionStateMachine(securityPolicy: policy)
+        sm.transportSupportsTLS = transportSupportsTLS
+        _ = sm.handle(event: .connected)
+        _ = sm.handle(event: .receivedProtocolVersion(.v3_8))
+        _ = sm.handle(event: .receivedSecurityTypes(types))
+        if case .failed = sm.state { return nil }
+        return sm.selectedSecurityType
+    }
+
+    func testRSAAESWireValues() {
+        XCTAssertEqual(SecurityType(rawValue: 5), .ra2)
+        XCTAssertEqual(SecurityType(rawValue: 6), .ra2ne)
+        XCTAssertEqual(SecurityType(rawValue: 129), .ra2_256)
+        XCTAssertEqual(SecurityType(rawValue: 130), .ra2ne_256)
+        for type in SecurityType.rsaAES {
+            XCTAssertEqual(SecurityType(rawValue: type.rawValue), type)
+        }
+    }
+
+    func testAutomaticSecurityTakesRSAAESThatEncryptsTheSessionFirst() {
+        // What wayvnc offers when it is set up to ask for a password.
+        XCTAssertEqual(selection(from: [.vencrypt, .ra2_256, .ra2]), .ra2_256)
+        // What a RealVNC server offers.
+        XCTAssertEqual(selection(from: [.ra2, .ra2ne, .vncAuthentication]), .ra2)
+        XCTAssertEqual(selection(from: [.ra2ne, .ra2]), .ra2)
+    }
+
+    func testAutomaticSecurityTakesAnEncryptedSignInBeforeAPlainOne() {
+        XCTAssertEqual(selection(from: [.vncAuthentication, .ra2ne]), .ra2ne)
+        XCTAssertEqual(selection(from: [.none, .ra2ne_256, .ra2ne]), .ra2ne_256)
+    }
+
+    func testAutomaticSecurityTakesVeNCryptWhenTheServerOffersNoVNCAuthentication() {
+        XCTAssertEqual(selection(from: [.vencrypt]), .vencrypt)
+        XCTAssertEqual(selection(from: [.vencrypt, .none]), .vencrypt)
+        // TLS sign-in and session before a sign-in that is all RSA-AES
+        // protects.
+        XCTAssertEqual(selection(from: [.vencrypt, .ra2ne]), .vencrypt)
+    }
+
+    func testAutomaticSecurityLeavesVeNCryptAloneWhereTLSCannotBeStarted() {
+        // Through a tunnel: RSA-AES needs nothing of the transport.
+        XCTAssertEqual(
+            selection(from: [.vencrypt, .ra2ne], transportSupportsTLS: false), .ra2ne)
+        // With nothing else on offer VeNCrypt is still chosen, for what it
+        // has inside that needs no TLS.
+        XCTAssertEqual(
+            selection(from: [.vencrypt], transportSupportsTLS: false), .vencrypt)
+    }
+
+    func testRequireEncryptionAcceptsOnlyWhatEncryptsTheSession() {
+        XCTAssertEqual(selection(from: [.ra2ne, .ra2], policy: .requireEncryption), .ra2)
+        XCTAssertEqual(
+            selection(from: [.vncAuthentication, .vencrypt], policy: .requireEncryption), .vencrypt)
+        XCTAssertNil(selection(from: [.vncAuthentication, .ra2ne], policy: .requireEncryption))
+    }
+
     func testAutomaticSecurityKeepsMacAuthenticationWhenAppleSRPIsAlsoOffered() {
         var sm = ConnectionStateMachine(hasUsername: true)
         _ = sm.handle(event: .connected)

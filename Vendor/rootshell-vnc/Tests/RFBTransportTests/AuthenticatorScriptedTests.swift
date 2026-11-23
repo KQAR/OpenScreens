@@ -125,6 +125,76 @@ final class AuthenticatorScriptedTests: XCTestCase {
         XCTAssertNil(endpoint)
     }
 
+    /// The start of a VeNCrypt exchange: version 0.2 and these subtypes.
+    private static func veNCryptOffer(_ subtypes: [UInt32]) -> Data {
+        var bytes = Data([0, 2, 0, UInt8(subtypes.count)])
+        for subtype in subtypes {
+            bytes.append(contentsOf: (0..<4).reversed().map { UInt8((subtype >> ($0 * 8)) & 0xff) })
+        }
+        return bytes
+    }
+
+    func testVeNCryptTakesVNCAuthenticationWhereTheOnlyTLSHasNoCertificate() async throws {
+        // What TigerVNC lists as installed: anonymous TLS and plain VncAuth.
+        let connection = ScriptedRFBConnection()
+        await connection.enqueueServerBytes(
+            Self.veNCryptOffer([258, 2]) + Data([1]) + Self.challenge)
+
+        let result = try await VeNCryptAuthenticator(
+            host: "linux.example", port: 5900, username: nil, password: "password"
+        ).authenticate(connection: connection)
+
+        XCTAssertFalse(result.establishedTLS)
+        let endpoint = await connection.upgradedTLSEndpoint()
+        XCTAssertNil(endpoint)
+        let sent = await connection.sentBytes()
+        XCTAssertEqual(sent, Data([0, 2, 0, 0, 0, 2]) + Self.expectedResponse)
+    }
+
+    func testVeNCryptSaysWhenItTookTheConnectionIntoTLS() async throws {
+        let connection = ScriptedRFBConnection()
+        await connection.enqueueServerBytes(
+            Self.veNCryptOffer([261, 2]) + Data([1]) + Self.challenge)
+
+        let result = try await VeNCryptAuthenticator(
+            host: "linux.example", port: 5900, username: nil, password: "password"
+        ).authenticate(connection: connection)
+
+        XCTAssertTrue(result.establishedTLS)
+        let sent = await connection.sentBytes()
+        XCTAssertEqual(sent, Data([0, 2, 0, 0, 1, 5]) + Self.expectedResponse)
+    }
+
+    func testVeNCryptAsksForAUserNameWhenNothingElseWouldDo() async throws {
+        // What wayvnc offers when it is set up to ask for a password.
+        let connection = ScriptedRFBConnection()
+        await connection.enqueueServerBytes(Self.veNCryptOffer([262]))
+        do {
+            _ = try await VeNCryptAuthenticator(
+                host: "pi.example", port: 5900, username: nil, password: "secret"
+            ).authenticate(connection: connection)
+            XCTFail("Expected the sign-in to stop")
+        } catch let error as VNCProtocolError {
+            XCTAssertEqual(error, .authenticationFailed(VNCProtocolError.usernameRequiredReason))
+        }
+    }
+
+    func testVeNCryptWithOnlyTLSRequiredTakesNothingOutsideIt() async throws {
+        let connection = ScriptedRFBConnection()
+        await connection.enqueueServerBytes(Self.veNCryptOffer([258, 2]))
+        do {
+            _ = try await VeNCryptAuthenticator(
+                host: "linux.example", port: 5900, username: nil, password: "password",
+                requiresTLS: true
+            ).authenticate(connection: connection)
+            XCTFail("Expected the sign-in to stop")
+        } catch let error as VNCProtocolError {
+            guard case .authenticationFailed = error else { return XCTFail("\(error)") }
+        }
+        let sent = await connection.sentBytes()
+        XCTAssertEqual(sent, Data([0, 2]), "nothing but the version is sent")
+    }
+
     func testVeNCryptSubtypeRejectionFailsBeforeTLS() async throws {
         let connection = ScriptedRFBConnection()
         var serverBytes = Data([0, 2, 0, 1])

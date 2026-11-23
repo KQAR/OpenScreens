@@ -10,6 +10,9 @@ import RFBProtocol
 public enum VNCContentEncryption: Sendable, Equatable {
     /// VeNCrypt X.509 TLS wraps the entire RFB stream.
     case tlsX509
+    /// RSA-AES (RA2) wraps the entire RFB stream in AES-EAX with keys of
+    /// this many bits.
+    case rsaAES(keyBits: Int)
     /// Apple ComCryption: the control channel is AES-CBC encrypted and, when
     /// `mediaSRTP` is true, the accelerated UDP media path is SRTP-protected.
     /// `cipherMode`/`keyLength` mirror the server's EncryptionInfo record

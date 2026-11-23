@@ -26,6 +26,8 @@ public struct VNCConfiguration: Sendable {
     public typealias CertificateValidationRequest = VNCCertificateValidationRequest
     public typealias CertificateValidationResult = VNCCertificateValidationResult
     public typealias CertificateValidationHandler = VNCCertificateValidationHandler
+    public typealias ServerKeyValidationRequest = VNCServerKeyValidationRequest
+    public typealias ServerKeyValidationHandler = VNCServerKeyValidationHandler
 
     /// Security negotiation policy. Automatic is the zero-configuration
     /// default and adapts to Apple and conventional RFB servers.
@@ -35,6 +37,12 @@ public struct VNCConfiguration: Sendable {
     /// certificate. Hosts can implement TOFU without weakening validation for
     /// publicly trusted certificates.
     public var certificateValidationHandler: VNCCertificateValidationHandler?
+
+    /// Called with the key an RSA-AES server (RealVNC, wayvnc) presents.
+    /// Nothing else vouches for such a key, so a session to one of these
+    /// servers cannot be opened without a handler: hosts show the key's
+    /// signature the first time and remember the answer.
+    public var serverKeyValidationHandler: VNCServerKeyValidationHandler?
 
     /// Compatibility display-count choices. A value of `2` means Apple's
     /// "all displays combined" topology; use ``DisplayMode`` when the exact

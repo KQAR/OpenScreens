@@ -1,21 +1,33 @@
 import Foundation
 import RFBProtocol
 
-/// VeNCrypt 0.2 using its X.509-protected subtypes. Anonymous TLS subtypes are
-/// deliberately not selected because modern TLS stacks no longer support the
-/// anonymous cipher suites they require.
+/// VeNCrypt 0.2. Its X.509-protected subtypes come first. Anonymous TLS
+/// subtypes are deliberately not selected because modern TLS stacks no longer
+/// support the anonymous cipher suites they require. The subtypes with no TLS
+/// at all, which a server such as TigerVNC lists beside the others, are what
+/// is left when nothing with a certificate is on offer.
 public struct VeNCryptAuthenticator: Authenticator, Sendable {
     private enum Subtype: UInt32, Sendable {
+        case none = 1
+        case vnc = 2
+        case plain = 256
         case x509None = 260
         case x509VNC = 261
         case x509Plain = 262
+
+        var usesTLS: Bool { rawValue >= 260 }
     }
+
+    /// The anonymous TLS subtypes, which cannot be used.
+    private static let anonymousTLS: Set<UInt32> = [257, 258, 259]
 
     private let host: String
     private let port: UInt16
     private let username: String?
     private let password: String
     private let certificateValidationHandler: VNCCertificateValidationHandler?
+    /// Whether only a subtype inside TLS will do.
+    private let requiresTLS: Bool
     private let log = VNCLogger(category: "VeNCrypt")
 
     public init(
@@ -23,20 +35,19 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
         port: UInt16,
         username: String?,
         password: String,
-        certificateValidationHandler: VNCCertificateValidationHandler? = nil
+        certificateValidationHandler: VNCCertificateValidationHandler? = nil,
+        requiresTLS: Bool = false
     ) {
         self.host = host
         self.port = port
         self.username = username
         self.password = password
         self.certificateValidationHandler = certificateValidationHandler
+        self.requiresTLS = requiresTLS
     }
 
     public func authenticate(connection: any RFBConnection) async throws -> AuthenticationResult {
-        guard await connection.supportsTLSUpgrade() else {
-            throw VNCProtocolError.protocolViolation(
-                "VeNCrypt is unavailable over the selected tunnel transport")
-        }
+        let canUseTLS = await connection.supportsTLSUpgrade()
 
         let serverVersion = try await connection.read(exactly: 2)
         guard serverVersion.count == 2,
@@ -68,10 +79,9 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
             let byte3 = UInt32(subtypeData[offset + 3])
             offered.append(byte0 | byte1 | byte2 | byte3)
         }
-        guard let selected = selectSubtype(from: offered) else {
-            let list = offered.map(String.init).joined(separator: ", ")
+        guard let selected = selectSubtype(from: offered, canUseTLS: canUseTLS) else {
             throw VNCProtocolError.authenticationFailed(
-                "No supported encrypted VeNCrypt subtype was offered (\(list))")
+                whyNothingWasSelected(from: offered, canUseTLS: canUseTLS))
         }
 
         try await connection.send(Self.bigEndianData(selected.rawValue))
@@ -84,35 +94,58 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
             throw VNCProtocolError.authenticationFailed(
                 "The server rejected VeNCrypt subtype \(selected.rawValue)")
         }
-        try await connection.startTLS(configuration: RFBTLSConfiguration(
-            serverHostname: host,
-            serverPort: port,
-            certificateValidationHandler: certificateValidationHandler))
+        if selected.usesTLS {
+            try await connection.startTLS(configuration: RFBTLSConfiguration(
+                serverHostname: host,
+                serverPort: port,
+                certificateValidationHandler: certificateValidationHandler))
+        }
 
         switch selected {
-        case .x509None:
+        case .none, .x509None:
             break
-        case .x509VNC:
+        case .vnc, .x509VNC:
             _ = try await VNCAuthenticator(password: password)
                 .authenticate(connection: connection)
-        case .x509Plain:
+        case .plain, .x509Plain:
             try await sendPlainCredentials(connection: connection)
         }
-        return AuthenticationResult()
+        return AuthenticationResult(establishedTLS: selected.usesTLS)
     }
 
-    private func selectSubtype(from offered: [UInt32]) -> Subtype? {
-        if let username, !username.isEmpty,
-           offered.contains(Subtype.x509Plain.rawValue) {
-            return .x509Plain
+    private var hasUsername: Bool {
+        username.map { !$0.isEmpty } ?? false
+    }
+
+    private func selectSubtype(from offered: [UInt32], canUseTLS: Bool) -> Subtype? {
+        // With a user name, a sign-in that takes one; without, one that
+        // does not. Inside TLS before outside it.
+        var wanted: [Subtype] = []
+        if canUseTLS {
+            wanted += hasUsername ? [.x509Plain, .x509VNC, .x509None] : [.x509VNC, .x509None]
         }
-        if offered.contains(Subtype.x509VNC.rawValue) {
-            return .x509VNC
+        if !requiresTLS {
+            wanted += hasUsername ? [.plain, .vnc, .none] : [.vnc, .none]
         }
-        if offered.contains(Subtype.x509None.rawValue) {
-            return .x509None
+        return wanted.first { offered.contains($0.rawValue) }
+    }
+
+    /// What to say when the server offered nothing that could be selected.
+    private func whyNothingWasSelected(from offered: [UInt32], canUseTLS: Bool) -> String {
+        let plainSubtypes = [Subtype.x509Plain, .plain].filter {
+            ($0.usesTLS ? canUseTLS : !requiresTLS) && offered.contains($0.rawValue)
         }
-        return nil
+        if !hasUsername, !plainSubtypes.isEmpty {
+            return VNCProtocolError.usernameRequiredReason
+        }
+        if !canUseTLS, offered.contains(where: { $0 >= 260 }) {
+            return "This server protects its connections with TLS, which cannot be used through a tunnel"
+        }
+        if offered.allSatisfy({ Self.anonymousTLS.contains($0) }) {
+            return "This server only offers TLS without a certificate, which is not supported"
+        }
+        let list = offered.map(String.init).joined(separator: ", ")
+        return "The server offered no VeNCrypt sign-in that is supported (\(list))"
     }
 
     private func sendPlainCredentials(connection: any RFBConnection) async throws {

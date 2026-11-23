@@ -3939,7 +3939,8 @@ public final class VNCSession {
             connection: customConnection,
             datagramProvider: configuration.datagramProvider,
             securityPolicy: configuration.securityPolicy,
-            certificateValidationHandler: configuration.certificateValidationHandler)
+            certificateValidationHandler: configuration.certificateValidationHandler,
+            serverKeyValidationHandler: configuration.serverKeyValidationHandler)
         negotiatedCursorRendering = cursorRendering
         transportSession = transport
 

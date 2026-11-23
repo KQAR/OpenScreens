@@ -43,6 +43,9 @@ public struct ConnectionStateMachine: Sendable {
 
     public var securityPolicy: VNCSecurityPolicy
     public var hasUsername: Bool
+    /// Whether the byte stream under the session can be upgraded to TLS,
+    /// which VeNCrypt needs. A tunnel usually cannot.
+    public var transportSupportsTLS = true
 
     public static let defaultPreferredEncodings: [Encoding] = [
         // Prefer copyRect (cheap) then raw (simple, reliable).
@@ -121,7 +124,7 @@ public struct ConnectionStateMachine: Sendable {
             guard let selected = selectBestSecurityType(from: types) else {
                 let error = VNCProtocolError.authenticationFailed(
                     requiresUsername(types)
-                        ? "This server requires a user name and password"
+                        ? VNCProtocolError.usernameRequiredReason
                         : "The server does not offer the requested security method")
                 state = .failed(error)
                 return [.reportError(error)]
@@ -272,7 +275,7 @@ public struct ConnectionStateMachine: Sendable {
         // A diagnostic override must never downgrade an explicitly encrypted
         // session. Handle this policy before consulting process state.
         if securityPolicy == .requireEncryption {
-            return types.contains(.vencrypt) ? .vencrypt : nil
+            return encryptedSecurityType(from: types)
         }
 
         if let forced = ProcessInfo.processInfo.environment["ROOTSHELL_VNC_SECURITY_TYPE"] {
@@ -308,22 +311,50 @@ public struct ConnectionStateMachine: Sendable {
             return types.contains(.appleSRP) ? .appleSRP : nil
         case .requireEncryption:
             // Handled before diagnostic overrides above.
-            return types.contains(.vencrypt) ? .vencrypt : nil
+            return encryptedSecurityType(from: types)
         case .automatic:
             if negotiatedVersion?.isApple == true, hasUsername {
                 if types.contains(.macAuthentication) { return .macAuthentication }
                 if types.contains(.apple30) { return .apple30 }
                 if types.contains(.appleSRP) { return .appleSRP }
             }
+            // What encrypts the whole session comes first. RSA-AES is taken
+            // ahead of VeNCrypt where a server offers both (wayvnc does): it
+            // runs over any byte stream, a tunnel included, so the server is
+            // known by the same key whichever way it is reached.
+            if let encrypted = SecurityType.rsaAES.first(where: {
+                $0.encryptsSession && types.contains($0)
+            }) {
+                return encrypted
+            }
             // TigerVNC commonly offers anonymous TLSVnc alongside VncAuth.
-            // NIOSSL cannot negotiate anonymous cipher suites, so take the
-            // interoperable choice when both outer types are present. X509-
-            // only servers (including secured wayvnc) still select VeNCrypt.
-            if types.contains(.vncAuthentication) { return .vncAuthentication }
+            // NIOSSL cannot negotiate anonymous cipher suites, and what is
+            // inside VeNCrypt is only known once it has been chosen, so the
+            // interoperable choice is taken when both outer types are
+            // present. Servers that offer VeNCrypt alone still get it.
+            let offersVNCAuthentication = types.contains(.vncAuthentication)
+            if transportSupportsTLS, types.contains(.vencrypt), !offersVNCAuthentication {
+                return .vencrypt
+            }
+            // A sign-in that is encrypted, before one that is not.
+            if let protected = SecurityType.rsaAES.first(where: types.contains) {
+                return protected
+            }
+            if offersVNCAuthentication { return .vncAuthentication }
             if types.contains(.vencrypt) { return .vencrypt }
             if types.contains(.none) { return SecurityType.none }
             return nil
         }
+    }
+
+    /// The type to use when nothing unencrypted will do.
+    private func encryptedSecurityType(from types: [SecurityType]) -> SecurityType? {
+        if let encrypted = SecurityType.rsaAES.first(where: {
+            $0.encryptsSession && types.contains($0)
+        }) {
+            return encrypted
+        }
+        return types.contains(.vencrypt) ? .vencrypt : nil
     }
 
     /// Automatic selection skipped Apple types only because no username was set.
@@ -340,7 +371,7 @@ public struct ConnectionStateMachine: Sendable {
     private func securityTypeIsAllowed(_ type: SecurityType) -> Bool {
         switch securityPolicy {
         case .requireEncryption:
-            return type == .vencrypt
+            return type == .vencrypt || type.encryptsSession
         case .none:
             return type == .none
         case .vncAuthentication:
@@ -353,7 +384,8 @@ public struct ConnectionStateMachine: Sendable {
             return type == .appleSRP
         case .automatic:
             switch type {
-            case .none, .vncAuthentication, .vencrypt, .apple30, .macAuthentication, .appleSRP:
+            case .none, .vncAuthentication, .vencrypt, .apple30, .macAuthentication, .appleSRP,
+                 .ra2, .ra2ne, .ra2_256, .ra2ne_256:
                 return true
             default:
                 return false

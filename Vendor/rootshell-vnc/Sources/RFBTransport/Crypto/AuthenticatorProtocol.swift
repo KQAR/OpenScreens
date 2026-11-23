@@ -6,9 +6,12 @@ public struct AuthenticationResult: Sendable, Equatable {
     /// Apple DH/SRP session key material usable for the post-auth encrypted
     /// control stream when the server enables it.
     public let appleSessionKey: Data?
+    /// Whether the exchange put the connection inside TLS.
+    public let establishedTLS: Bool
 
-    public init(appleSessionKey: Data? = nil) {
+    public init(appleSessionKey: Data? = nil, establishedTLS: Bool = false) {
         self.appleSessionKey = appleSessionKey
+        self.establishedTLS = establishedTLS
     }
 }
 
