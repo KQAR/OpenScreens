@@ -130,6 +130,13 @@ to the same Macs. What OpenScreens adds:
 <sub>The computers are invented and the desktops are drawn by the demo server
 that comes with the project, so nobody's real screen is on show.</sub>
 
+<p align="center">
+  <img src="docs/images/icon-appearances.png" width="620" alt="The app icon in its light, dark, tinted and clear appearances">
+</p>
+
+<sub>The icon is the system's to draw: light, dark, tinted or clear, as the
+Mac or iPhone is set.</sub>
+
 ## Install
 
 **Mac** — download the disk image from the latest
