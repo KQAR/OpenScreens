@@ -9,9 +9,11 @@ A release for computers that are not Macs, after the questions people asked
 when the project was passed around: does it work with Linux, with Windows,
 with a Raspberry Pi?
 
-- **Raspberry Pi OS works as it comes.** Its VNC server asks for your user
-  name and password over RSA-AES or TLS, and OpenScreens could do neither,
-  so a Pi with VNC simply turned on could not be connected to. The same
+- **Raspberry Pi OS as it comes.** Its VNC server asks for your user name
+  and password over RSA-AES or TLS, and OpenScreens could do neither, so a
+  Pi with VNC simply turned on could not be connected to. It is now signed
+  in to the way it asks, which was tried against the same server set up
+  the same way and is yet to be tried on a Pi itself. The same
   goes for TigerVNC and x11vnc set up with TLS. RSA-AES is also what
   **RealVNC servers** speak by default; it is implemented here the way
   TigerVNC and wayvnc implement it, and has yet to meet a RealVNC server.
