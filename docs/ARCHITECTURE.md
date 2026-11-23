@@ -80,11 +80,29 @@ what makes it testable:
    by default, 1024 for more space. A Mac does not say when it will not make
    a display that small, so once the resize has settled the session checks
    what it was given.
+   A computer that is not a Mac is asked another way, and only where its
+   server has said it lets a client resize its desktop: for one of
+   `StandardDesktop`'s choosing, at one pixel to a point, since such a
+   desktop is not drawn at twice its size.
 4. Pointer events are mapped through `Viewport` to the picture and through
    `DisplayArrangement` to remote pixels. Key events go through
    `HardwareKeyboard`.
 5. Ending the session releases every key and button that is down first, so
    nothing is left stuck on the other side.
+
+## Servers that are not Macs
+
+A VNC server is signed in to the way it asks. The engine chooses among what
+the server offers: RSA-AES, which RealVNC and wayvnc speak, where it
+encrypts the whole session; VeNCrypt with TLS; an encrypted sign-in before
+a plain one; and a VNC password.
+
+A server that encrypts its connections does it with a certificate or a key
+that nobody has signed. The engine hands either to `RemoteSession`, which
+makes a `ServerIdentity` of it and asks a `KnownHostsStore` of its own, as
+it does for the SSH server of a tunnel: unknown is the user's to judge, on
+record goes through, and anything else for the same computer is shown as a
+change. The answer travels back to the engine before a password is sent.
 
 ## Typing
 
@@ -142,6 +160,9 @@ live in the keychain, behind `SecretStorage`.
 - **Interface tests** launch the iPhone app pointed at a server the test
   runs, and drive it with touches and key presses.
 - **Engine tests** are upstream's, plus those for the local changes.
+- **The compatibility lab** opens sessions to real VNC servers in a
+  container and looks inside it at what arrived. It needs Docker and is run
+  by hand: [`scripts/compat-lab`](../scripts/compat-lab/README.md).
 
 Debug builds read a few environment variables at launch — open this address,
 type this, press these keys, write a report — so a session with a real
