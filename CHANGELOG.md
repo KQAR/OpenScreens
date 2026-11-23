@@ -3,6 +3,42 @@
 Notable changes to OpenScreens. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 1.2.0
+
+A release for computers that are not Macs, after the questions people asked
+when the project was passed around: does it work with Linux, with Windows,
+with a Raspberry Pi?
+
+- **Raspberry Pi OS works as it comes.** Its VNC server asks for your user
+  name and password over RSA-AES or TLS, and OpenScreens could do neither,
+  so a Pi with VNC simply turned on could not be connected to. The same
+  goes for **RealVNC servers**, which speak RSA-AES by default, and for
+  TigerVNC and x11vnc set up with TLS.
+- **A computer that encrypts its own connections is asked about once.** Its
+  certificate, or its key, is one nobody has signed, so the first connection
+  shows a fingerprint to check, as SSH does. After that OpenScreens stops,
+  showing both fingerprints, if the computer presents another. The list is
+  under **SSH Keys** in Settings.
+- **A VNC server's desktop fits the screen.** TigerVNC, and wayvnc on a
+  screen of its own, are asked for a desktop in the shape of your window or
+  phone, and again when it is resized or turned. Computers that are not
+  Macs now start with **Fit This Display**; **Remote Display** puts the
+  desktop back as it was found.
+- A server that needs a user name is asked for with a field for one, where
+  the prompt used to offer only a password.
+- Turning down a computer's certificate or key says so, where it used to
+  ask for the password again.
+- A VNC server that lists what it offers inside VeNCrypt, as TigerVNC does,
+  is signed in to with what it has there.
+- The statistics overlay says **TLS**, **AES-128** or **AES-256** for a VNC
+  session that is encrypted.
+
+Behind this is a lab of real servers. `scripts/compat-lab` runs TigerVNC,
+x11vnc and wayvnc in twelve configurations, and a session is opened to
+each to check what was typed, where the pointer went, what reached the
+clipboard, the size of the desktop, both reduced and lossless colour, and
+every answer to the question about a certificate or key.
+
 ## 1.1.1
 
 - **Opening a session no longer freezes the app.** Version 1.1.0 showed the

@@ -225,6 +225,42 @@ struct CompatibilityLabTests {
         }
     }
 
+    /// Whether the desktop's own colour is where the desktop shows.
+    private func desktopColourArrives(in session: RemoteSession, tolerance: Int) async -> Bool {
+        await waitUntil {
+            guard let image = session.screenshot(), let pixels = Pixels(image) else { return false }
+            return pixels.isClose(to: (0x2f, 0x6f, 0x9f), atX: 1200, y: 700, tolerance: tolerance)
+        }
+    }
+
+    @Test(arguments: CompatibilityLab.servers)
+    func fullQualityIsExact(_ server: Server) async throws {
+        let (session, model) = try open(server) { $0.settings.quality = .fullQuality }
+        defer { model.sessions.close(session) }
+        _ = await connect(session)
+        guard session.phase == .connected else {
+            Issue.record("\(session.phase)")
+            return
+        }
+        #expect(session.activeQuality == .fullQuality)
+        // Nothing is thrown away on the way: the colour is the colour.
+        #expect(await desktopColourArrives(in: session, tolerance: 0))
+    }
+
+    @Test(arguments: CompatibilityLab.servers)
+    func thousandsOfColoursArriveAsThousands(_ server: Server) async throws {
+        // What to choose on a slow connection: far less to send.
+        let (session, model) = try open(server) { $0.settings.colorDepth = .thousands }
+        defer { model.sessions.close(session) }
+        _ = await connect(session)
+        guard session.phase == .connected else {
+            Issue.record("\(session.phase)")
+            return
+        }
+        // Five bits a channel put the colour within eight of what it was.
+        #expect(await desktopColourArrives(in: session, tolerance: 8))
+    }
+
     @Test(arguments: CompatibilityLab.servers)
     func whatIsTypedArrives(_ server: Server) async throws {
         let (session, model) = try open(server)

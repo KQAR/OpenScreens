@@ -20,6 +20,26 @@ VNC.
 
 </div>
 
+## Why not the Screen Sharing app that comes with a Mac?
+
+Between two Macs it is very good, and OpenScreens speaks the same protocol
+to the same Macs. What OpenScreens adds:
+
+- **iPhone and iPad.** Apple makes no Screen Sharing app for them. Here
+  High Performance mode, with sound and a desktop made for the screen in
+  your hand, works from a phone.
+- **Computers that are not Macs.** Linux, Windows and Raspberry Pi through
+  the VNC servers people actually run, signed in to the way those servers
+  ask: [see below](#windows-linux-and-raspberry-pi).
+- **A way in from anywhere.** Your Tailscale devices listed beside your
+  library, and SSH tunnels built in, keys and all.
+- **Files without screen sharing.** An SFTP browser for anything that runs
+  SSH.
+- **A library.** Groups, tags, previews and search, the same on every
+  device through iCloud.
+- **The source.** MIT licensed, with nothing to pay for and nothing sent
+  anywhere.
+
 ## What it does
 
 **The picture**
@@ -33,7 +53,9 @@ VNC.
   own, which share the window: beside each other when it is wide, one above
   the other on a phone held upright.
 - **Standard and Full Quality** modes for every Mac, and for Windows, Linux
-  and Raspberry Pi computers running a VNC server.
+  and Raspberry Pi computers running a VNC server. A VNC server with a
+  desktop of its own, such as TigerVNC, makes it the size of your window
+  or screen as well.
 - Zoom, pan, fit, fill and actual size. A reconnect picks up where it left
   off, with the last picture still faintly there.
 
@@ -134,8 +156,40 @@ computer on your network, and a connection to one just never answers. The
 switch is under **Privacy & Security › Local Network** in System Settings if
 you change your mind.
 
-For a PC or a Raspberry Pi, set up a VNC server on it and add the computer
-the same way.
+### Windows, Linux and Raspberry Pi
+
+OpenScreens connects to a VNC server on the other computer, and signs in
+the way that server asks: with a VNC password, with a user name and
+password, inside TLS, or with RSA-AES, which is what RealVNC and Raspberry
+Pi OS use.
+
+- **Raspberry Pi OS.** Turn on VNC under **Raspberry Pi Configuration ›
+  Interfaces**, or with `sudo raspi-config`. Add the Pi in OpenScreens and
+  sign in with your user name and password on the Pi.
+- **Linux.** Start a server such as TigerVNC (`vncserver`), x11vnc for the
+  screen you are sitting at, or wayvnc on a Wayland desktop. With TigerVNC,
+  and wayvnc on a screen of its own, the desktop takes the size of your
+  window or screen.
+- **Windows.** Install a VNC server: TightVNC, UltraVNC or RealVNC Server.
+  OpenScreens does not speak RDP, the remote desktop that comes with
+  Windows.
+
+A server that encrypts its connections shows a fingerprint the first time,
+as SSH does. Check it against the server's own, and OpenScreens will stop
+if that computer ever presents another.
+
+| Server | Sign-in | Tried against |
+|---|---|---|
+| TigerVNC | VNC password, user name and password, TLS, RSA-AES | TigerVNC 1.15 |
+| wayvnc | as Raspberry Pi OS sets it up, or none | wayvnc 0.9.1 |
+| x11vnc | VNC password, with or without TLS | x11vnc 0.9.17 |
+| RealVNC Server | RSA-AES, as TigerVNC and wayvnc implement it | not yet a RealVNC server itself |
+| TightVNC, UltraVNC | VNC password | not yet |
+
+The first three are run for real: [`scripts/compat-lab`](scripts/compat-lab)
+starts them in twelve configurations and tests typing, the pointer, the
+clipboard, resizing and encryption against each. If yours behaves
+differently, [say so](https://github.com/burakgon/OpenScreens/issues).
 
 ### From outside your network
 
@@ -156,6 +210,8 @@ reach a computer from elsewhere:
 | Mac, High Performance | Encrypted | Encrypted | Encrypted (AES, with SRTP for video and sound) |
 | Mac, Standard or Full Quality | Encrypted | Encrypted | **Not encrypted** |
 | Any computer through an SSH tunnel | Encrypted | Encrypted | Encrypted |
+| VNC server with TLS or RSA-AES | Encrypted | Encrypted | Encrypted |
+| VNC server with RSA-AES for the sign-in only | Encrypted | Not encrypted | Not encrypted |
 | VNC server with a VNC password | Challenge–response | Not encrypted | Not encrypted |
 
 On your own network that is usually fine. Across networks you do not control,
@@ -199,6 +255,10 @@ xcodebuild test -project OpenScreens.xcodeproj -scheme "OpenScreens iOS" \
 No computer to connect to? `swift run --package-path Packages/OpenScreensKit
 openscreens-demo-server` shows a drawn desktop on port 5900.
 
+To try a change against real servers, `scripts/compat-lab/lab.sh test` starts
+TigerVNC, x11vnc and wayvnc in a container and runs a session against each.
+It needs Docker, and [its own page](scripts/compat-lab/README.md) says more.
+
 ## How it is put together
 
 ```
@@ -222,8 +282,33 @@ records what was learned about Apple's protocol along the way.
   into a Mac as keystrokes. Paste them instead.
 - An SSH server that only offers an RSA host key, or only
   keyboard-interactive sign-in, is not supported.
-- A VNC server that insists on TLS with a self-signed certificate is not
-  supported yet. Tunnel through SSH instead.
+- A VNC server that offers TLS only without a certificate (VeNCrypt's
+  anonymous types) or only UltraVNC's MS-Logon cannot be signed in to.
+  Give it a VNC password, or tunnel through SSH.
+- RDP is not supported.
+
+## Questions people ask
+
+**Does it work with Windows and Linux?** It controls them, through a VNC
+server: [how](#windows-linux-and-raspberry-pi). The app itself runs on Mac,
+iPhone and iPad.
+
+**Will there be a version for Windows, Linux or Android?** Not as things
+stand. The interface is SwiftUI and the picture is decoded with Apple's
+video frameworks, so another platform would be another app. If you want
+one, [say which](https://github.com/burakgon/OpenScreens/issues): that is
+how it gets decided.
+
+**How does High Performance mode hold up on a slow connection?** The remote
+Mac lowers the bitrate and then the resolution as the connection gets
+worse, the way it does for Apple's own app; the statistics overlay shows
+both as it happens. When the connection is slow or drops packets, Standard
+is the better choice: it runs over TCP, works through SSH tunnels and VPNs,
+and with **Thousands of Colours** sends about half as much.
+
+**Where is the iPhone app?** Not on the App Store yet. Until the TestFlight
+beta opens it can be [built from source](#building-from-source), which
+needs a Mac with Xcode and nothing else.
 
 ## Contributing
 

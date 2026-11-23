@@ -261,19 +261,31 @@ struct HostKeyCard: View {
         case .certificate:
             return "\(server) encrypts the connection with a certificate of its own, which no authority has signed. To be sure it is the right computer, compare this with the certificate's SHA-256 fingerprint there."
         case .serverKey:
-            return "\(server) encrypts the connection with a key of its own. To be sure it is the right computer, compare the first part of this with the signature its VNC server shows."
+            return "\(server) encrypts the connection with a key of its own. To be sure it is the right computer, compare this signature with the one its VNC server shows."
         }
     }
 
     private func fingerprint(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        // A key's short signature is what there is to compare. The digest
+        // that follows it in brackets is what the key is held to, and is
+        // shown smaller, for whoever wants it.
+        let parts = value.split(separator: " (", maxSplits: 1)
+        let detail = parts.count == 2 && value.hasSuffix(")") ? String(parts[1].dropLast()) : nil
+        return VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(value)
+            Text(detail == nil ? value : String(parts[0]))
                 .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+            if let detail {
+                Text(detail)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
