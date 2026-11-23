@@ -453,6 +453,8 @@ struct CompatibilityLabTests {
         #expect(!prompt.fingerprint.isEmpty)
         first.answerHostKey(trust: true)
         #expect(await waitUntil { first.phase == .connected }, "\(first.phase)")
+        // If the connection drops and is made again, nothing less will do.
+        #expect(first.engine.configuration.requiresServerIdentity)
         model.sessions.close(first)
 
         // The next session has nothing to ask.
@@ -460,6 +462,7 @@ struct CompatibilityLabTests {
         defer { model.sessions.close(second) }
         #expect(await identityPrompt(second) == nil)
         #expect(await waitUntil { second.phase == .connected }, "\(second.phase)")
+        #expect(second.engine.configuration.requiresServerIdentity)
     }
 
     /// Someone reading a fingerprint against the one on the other

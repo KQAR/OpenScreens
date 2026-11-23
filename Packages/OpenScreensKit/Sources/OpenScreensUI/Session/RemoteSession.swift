@@ -585,6 +585,11 @@ public final class RemoteSession: Identifiable {
         if challenge.verdict != .trusted {
             identityWasJustTrusted = true
         }
+        if !computer.ssh.isEnabled {
+            // From now on, and so in this session too: a reconnection the
+            // engine makes by itself is held to the same.
+            engine.configuration.requiresServerIdentity = true
+        }
         if let ended = attemptEndedWhileAsking {
             // The server had stopped waiting before the answer came. The
             // answer is on record, so this attempt has nothing to ask.
