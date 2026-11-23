@@ -13,6 +13,7 @@ public struct OpenScreensMobileRoot: View {
 
     public var body: some View {
         LibraryView()
+            .updateNotices()
             .environment(model)
             .appLock()
             .environment(model)

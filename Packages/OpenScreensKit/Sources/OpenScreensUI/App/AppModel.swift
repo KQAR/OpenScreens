@@ -25,12 +25,22 @@ public final class AppModel {
     public let trustedServers: KnownHostsStore
     /// The optional lock in front of everything, shared by every window.
     public let lock: AppLock
+    /// Where an update to the app stands. The Mac app gives it something to
+    /// update with; on iPhone and iPad it only ever says there is nothing.
+    public let updates = UpdateModel()
+    /// The releases whose notes have not been shown yet, when the app was
+    /// updated since it last ran. Empty the rest of the time.
+    public private(set) var whatsNew: [ChangeLog.Entry] = []
 
     /// Fixed lists shown instead of what is really out there, so previews
     /// and screenshots do not show anyone's actual network.
     public var sampleDiscovery: SampleDiscovery?
 
     @ObservationIgnored private var settingsTask: Task<Void, Never>?
+    #if os(macOS)
+    /// Finds and installs updates, and tells ``updates`` where they stand.
+    @ObservationIgnored private var updater: SparkleUpdater?
+    #endif
 
     /// A link waiting to be opened. Set from wherever the request arrives —
     /// a URL, a Shortcut, a widget — and consumed by the library, which is
@@ -85,6 +95,55 @@ public final class AppModel {
         sync.isEnabled = settings.syncsWithICloud
         library.writeAutomaticBackupIfNeeded()
         followSettings()
+        updates.isBusy = { [sessions] in
+            sessions.sessions.contains { $0.isConnected }
+        }
+        #if os(macOS)
+        updater = SparkleUpdater(model: updates, isIsolated: isIsolated)
+        #endif
+    }
+
+    // MARK: - Releases
+
+    /// The change log that came with this build.
+    static let bundledChangeLog: ChangeLog = {
+        guard let url = Bundle.module.url(forResource: "CHANGELOG", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return ChangeLog(markdown: "")
+        }
+        return ChangeLog(markdown: text)
+    }()
+
+    /// Finds out whether the app was updated since it last ran, and if so
+    /// which releases there are notes to show for.
+    public func prepareWhatsNew() {
+        // A run with its own data folder is a test or a demonstration, and
+        // so is one that was told what to show or where to connect.
+        let environment = ProcessInfo.processInfo.environment
+        guard whatsNew.isEmpty, !StorageLocation.isIsolated,
+              environment["OPENSCREENS_SAMPLE_DATA"] == nil, environment["OPENSCREENS_CONNECT"] == nil,
+              let current = AppVersion.current else { return }
+        let entries = WhatsNew.entries(
+            in: Self.bundledChangeLog, current: current,
+            lastSeen: settings.lastSeenVersion.flatMap(AppVersion.init),
+            hasBeenUsed: !library.computers.isEmpty)
+        if entries.isEmpty {
+            // Nothing to show now. Noting the version is what lets the next
+            // one be told apart from it.
+            if settings.lastSeenVersion != current.description {
+                settings.lastSeenVersion = current.description
+            }
+        } else {
+            whatsNew = entries
+        }
+    }
+
+    /// The notes have been read.
+    public func dismissWhatsNew() {
+        whatsNew = []
+        if let current = AppVersion.current {
+            settings.lastSeenVersion = current.description
+        }
     }
 
     isolated deinit {

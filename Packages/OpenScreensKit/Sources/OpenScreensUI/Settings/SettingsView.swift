@@ -15,7 +15,7 @@ public struct SettingsView: View {
     #if os(macOS)
     /// The panes of the Mac's Settings window.
     enum Pane: String, Hashable {
-        case general, connections, shortcuts, tailscale, sshKeys, privacy, about
+        case general, connections, shortcuts, tailscale, sshKeys, privacy, updates, about
     }
 
     private static var initialPane: Pane {
@@ -49,6 +49,11 @@ public struct SettingsView: View {
             }
             Tab("Privacy", systemImage: "hand.raised", value: Pane.privacy) {
                 PrivacySettingsPane()
+            }
+            if model.updates.canUpdate {
+                Tab("Updates", systemImage: "arrow.down.circle", value: Pane.updates) {
+                    UpdatesSettingsPane()
+                }
             }
             Tab("About", systemImage: "info.circle", value: Pane.about) {
                 AboutPane()
@@ -518,10 +523,7 @@ struct AboutPane: View {
         Form {
             Section {
                 VStack(spacing: 8) {
-                    Image(systemName: "macbook.and.iphone")
-                        .font(.system(size: 44, weight: .light))
-                        .foregroundStyle(.tint)
-                        .symbolRenderingMode(.hierarchical)
+                    AppIconImage(size: 72)
                     Text("OpenScreens")
                         .font(.title2.weight(.semibold))
                     Text(version)

@@ -25,6 +25,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.15.1"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.95.0"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.26.0"),
+        // Finds, checks and installs updates to the Mac app. The iPhone and
+        // iPad app is updated by the App Store and TestFlight and does not
+        // link it.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.1"),
     ],
     targets: [
         // Models, persistence, discovery, networking helpers. No UI.
@@ -49,6 +53,7 @@ let package = Package(
                 .product(name: "rootshellVNC", package: "rootshell-vnc"),
                 .product(name: "RFBProtocol", package: "rootshell-vnc"),
                 .product(name: "RFBTransport", package: "rootshell-vnc"),
+                .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
             ],
             resources: [.process("Resources")],
             swiftSettings: [

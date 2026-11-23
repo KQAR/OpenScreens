@@ -105,6 +105,14 @@ public final class AppSettings {
         didSet { defaults.set(hidesOfflineTailscaleDevices, forKey: Key.hidesOfflineTailscale) }
     }
 
+    // MARK: Releases
+
+    /// The version whose release notes were last shown. Not a preference:
+    /// resetting the settings leaves it, so that old news is not news again.
+    public var lastSeenVersion: String? {
+        didSet { defaults.set(lastSeenVersion, forKey: Key.lastSeenVersion) }
+    }
+
     // MARK: Storage
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -131,6 +139,7 @@ public final class AppSettings {
         tailscaleEnabled = defaults.object(forKey: Key.tailscaleEnabled) as? Bool ?? true
         tailnet = defaults.string(forKey: Key.tailnet) ?? "-"
         hidesOfflineTailscaleDevices = defaults.bool(forKey: Key.hidesOfflineTailscale)
+        lastSeenVersion = defaults.string(forKey: Key.lastSeenVersion)
     }
 
     /// Restores every preference to its default value.
@@ -188,6 +197,8 @@ public final class AppSettings {
         static let tailscaleEnabled = "tailscaleEnabled"
         static let tailnet = "tailnet"
         static let hidesOfflineTailscale = "hidesOfflineTailscaleDevices"
+        /// Left out of `all`: see ``AppSettings/lastSeenVersion``.
+        static let lastSeenVersion = "lastSeenVersion"
 
         static let all = [
             defaultConnection, libraryLayout, librarySort, showsNearby, savesPreviews,

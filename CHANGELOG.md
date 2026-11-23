@@ -3,6 +3,26 @@
 Notable changes to OpenScreens. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 1.3.0
+
+- **The Mac app updates itself.** A new version is announced at the top of
+  the library, with what is in it. One click downloads it, checks it and
+  installs it, and the app opens again; if a session is open by then, you
+  are asked before it closes. Updates come from the project's releases on
+  GitHub and from nowhere else, and each is checked against the project's
+  signing key before it is opened. **Settings › Updates** has the switches:
+  looking for updates by itself, which is on, installing them by itself,
+  which is off, and **Check Now**, which the OpenScreens menu has as
+  **Check for Updates…**. From 1.2.0 or earlier this one update still has
+  to be downloaded by hand.
+- **What is new, after an update.** On Mac, iPhone and iPad the first
+  launch after an update says what changed.
+- **A new icon**, in layers the system lights: light, dark, tinted or clear,
+  as the Mac or iPhone is set.
+- The disk image the Mac app comes in is signed and notarised, as the app
+  in it has always been.
+- The About pane shows the app's own icon.
+
 ## 1.2.0
 
 A release for computers that are not Macs, after the questions people asked

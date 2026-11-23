@@ -14,6 +14,17 @@ struct LibraryCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            if model.updates.canUpdate {
+                Button("Check for Updates…") {
+                    // The answer is shown in the library's window.
+                    openWindow(id: WindowID.library)
+                    model.updates.checkNow()
+                }
+                .disabled(!model.updates.canCheck && model.updates.phase.release == nil)
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("Show Library") {
                 openWindow(id: WindowID.library)

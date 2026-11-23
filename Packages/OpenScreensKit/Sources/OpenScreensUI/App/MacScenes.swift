@@ -22,6 +22,7 @@ public struct OpenScreensScenes: Scene {
     public var body: some Scene {
         Window("OpenScreens", id: WindowID.library) {
             LibraryView()
+                .updateNotices()
                 .appLock()
                 .environment(model)
                 .frame(minWidth: 720, minHeight: 440)
