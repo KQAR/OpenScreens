@@ -851,6 +851,8 @@ public actor TransportSession {
     /// ExtendedDesktopSize rectangle. Retain that screen identity and any
     /// early client-size request until the announcement arrives.
     private var standardDesktopLayout: ExtendedDesktopSizePayload?
+    /// The size a host wants a conventional server's desktop to be.
+    private var wantedStandardDesktopSize: PendingRemoteDisplaySize?
     private var pendingRemoteDisplaySize: PendingRemoteDisplaySize?
     private var lastSentRemoteDisplaySize: PendingRemoteDisplaySize?
     /// Command 29 starts a complete AVC generation. Sending another command
@@ -4064,9 +4066,45 @@ public actor TransportSession {
         _ layout: ExtendedDesktopSizePayload
     ) async throws {
         standardDesktopLayout = layout
-        guard let pendingRemoteDisplaySize,
-              !usesAppleVirtualDisplays else { return }
-        try await sendStandardDesktopSize(pendingRemoteDisplaySize)
+        guard !usesAppleVirtualDisplays else { return }
+        if let pendingRemoteDisplaySize {
+            try await sendStandardDesktopSize(pendingRemoteDisplaySize)
+        } else if let wanted = wantedStandardDesktopSize, wanted != lastSentRemoteDisplaySize {
+            // Asked for before the server had said it resizes. A size that
+            // was already asked for is not asked for again: the server
+            // turned it down, or someone at the other end has since chosen
+            // another, and neither is to be argued with.
+            try await sendStandardDesktopSize(wanted)
+        }
+    }
+
+    /// Asks a conventional VNC server for a desktop of this many pixels.
+    ///
+    /// Servers that let a client resize their desktop say so with
+    /// ExtendedDesktopSize: TigerVNC and other servers with a virtual
+    /// desktop do, a server sharing a real screen as a rule does not. The
+    /// size is kept until the server has said which it is, and is not asked
+    /// for at all from a Mac, which makes its client-sized displays another
+    /// way (see ``requestRemoteDisplaySize(pixelWidth:pixelHeight:pointWidth:pointHeight:)``).
+    public func requestStandardDesktopSize(
+        pixelWidth: UInt16,
+        pixelHeight: UInt16
+    ) async throws {
+        let requested = PendingRemoteDisplaySize(
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
+            pointWidth: pixelWidth,
+            pointHeight: pixelHeight)
+        wantedStandardDesktopSize = requested
+        guard !usesAppleVirtualDisplays,
+              stateMachine.negotiatedVersion?.isApple != true,
+              standardDesktopLayout != nil,
+              requested != lastSentRemoteDisplaySize else { return }
+        if fbWidth == pixelWidth, fbHeight == pixelHeight {
+            lastSentRemoteDisplaySize = requested
+            return
+        }
+        try await sendStandardDesktopSize(requested)
     }
 
     private func sendStandardDesktopSize(

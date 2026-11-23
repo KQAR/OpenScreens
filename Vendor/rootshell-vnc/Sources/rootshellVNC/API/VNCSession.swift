@@ -1076,6 +1076,16 @@ public final class VNCSession {
     /// display.
     @ObservationIgnored
     private var preparedClientDisplaySize: RemoteDisplaySize?
+    /// The desktop size wanted from a conventional VNC server.
+    @ObservationIgnored
+    private var wantedStandardDesktopSize: StandardDesktopSize?
+    @ObservationIgnored
+    private var standardDesktopSizeTask: Task<Void, Never>?
+
+    private struct StandardDesktopSize: Equatable {
+        var width: UInt16
+        var height: UInt16
+    }
     /// Latest viewport reported while size updates were suspended.
     @ObservationIgnored
     private var deferredDisplaySizeUpdate: (viewSize: CGSize, displayScale: CGFloat)?
@@ -1925,6 +1935,42 @@ public final class VNCSession {
     ) -> CGSize? {
         RemoteDisplaySize.matching(viewSize: viewSize, minimumPointSize: minimumPointSize)
             .map { CGSize(width: Int($0.pixelWidth), height: Int($0.pixelHeight)) }
+    }
+
+    /// Asks a conventional VNC server for a desktop of this many pixels, now
+    /// and after every reconnection, where the server lets a client choose.
+    ///
+    /// This is Match Client for everything that is not a Mac: TigerVNC and
+    /// other servers with a virtual desktop resize it, and a server sharing
+    /// a real screen leaves it as it is. It works in every quality mode,
+    /// and does nothing with a Mac, whose client-sized displays are made by
+    /// ``updateRemoteDisplaySize(viewSize:displayScale:)``.
+    public func requestStandardDesktopSize(_ size: CGSize) {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width >= 1, size.height >= 1 else { return }
+        let wanted = StandardDesktopSize(
+            width: UInt16(min(max(size.width.rounded(), 64), 16384)),
+            height: UInt16(min(max(size.height.rounded(), 64), 16384)))
+        guard wanted != wantedStandardDesktopSize else { return }
+        wantedStandardDesktopSize = wanted
+        guard connectionState.isConnected, let transport = transportSession else { return }
+        standardDesktopSizeTask?.cancel()
+        standardDesktopSizeTask = Task { [weak self, weak transport] in
+            do {
+                // A window being dragged to a new size passes through many.
+                try await Task.sleep(for: .milliseconds(120))
+                guard let self, let transport,
+                      self.transportSession === transport,
+                      self.connectionState.isConnected else { return }
+                try await transport.requestStandardDesktopSize(
+                    pixelWidth: wanted.width, pixelHeight: wanted.height)
+            } catch is CancellationError {
+                return
+            } catch {
+                self?.logger.warning(
+                    "Failed to request a desktop size: \(error.localizedDescription)")
+            }
+        }
     }
 
     public func updateRemoteDisplaySize(
@@ -3951,6 +3997,11 @@ public final class VNCSession {
                 pixelHeight: preparedClientDisplaySize.pixelHeight,
                 pointWidth: preparedClientDisplaySize.pointWidth,
                 pointHeight: preparedClientDisplaySize.pointHeight)
+        }
+        if let wantedStandardDesktopSize {
+            try await transport.requestStandardDesktopSize(
+                pixelWidth: wantedStandardDesktopSize.width,
+                pixelHeight: wantedStandardDesktopSize.height)
         }
 
         startEventProcessing(transport: transport)
