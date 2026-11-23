@@ -104,6 +104,27 @@ it does for the SSH server of a tunnel: unknown is the user's to judge, on
 record goes through, and anything else for the same computer is shown as a
 change. The answer travels back to the engine before a password is sent.
 
+## Updates
+
+The Mac app updates itself. [Sparkle](https://sparkle-project.org) does the
+part that must not be got wrong: it reads the feed of releases, downloads
+one, checks the signatures, puts the app in place and opens it again. None
+of what the user sees is Sparkle's. `SparkleUpdater` hands each step to an
+`UpdateModel`, and the notice above the library, the sheet with the release
+notes and the pane in Settings are drawn from that. `UpdateModel` knows
+nothing of Sparkle, which is what lets its rules be tested: what the user
+asked about is shown at once, and what was found in the background waits
+beside a session instead of in front of it.
+
+On iPhone and iPad updates are the App Store's and TestFlight's, and the
+model has nothing behind it. What both platforms share is what comes after:
+the app carries a copy of `CHANGELOG.md`, and the first launch of a new
+version shows what it says about the releases since the one last seen.
+
+`scripts/release-mac.sh` writes the feed, `appcast.xml`, signs it and the
+disk image with the project's update key, and `scripts/publish-mac.sh`
+attaches it to the release, where installed copies look for it.
+
 ## Typing
 
 A key press becomes a `KeyStroke`: what the key types on the local layout

@@ -144,6 +144,12 @@ Mac or iPhone is set.</sub>
 and drag OpenScreens to Applications. The app is signed with a Developer ID
 and notarised by Apple. Requires macOS 26 or later.
 
+From then on it keeps itself up to date. A new version is announced at the
+top of the library with what is in it, and one click downloads it, checks
+it against the project's signing key, installs it and opens the app again.
+The app looks for one once a day, at this project's releases on GitHub and
+nowhere else; **Settings › Updates** turns that off.
+
 **iPhone and iPad** — not on the App Store yet. Until the TestFlight beta
 opens, [build it yourself](#building-from-source). Requires iOS or iPadOS 26
 or later. The same app runs on iPhone, on the folding iPhone Duo and on iPad.
@@ -332,7 +338,8 @@ OpenScreens stands on [rootshellVNC](https://github.com/kitknox/rootshell-vnc)
 by Kit Knox, which implements RFB and Apple's Screen Sharing extensions, and
 on [SwiftNIO](https://github.com/apple/swift-nio) and
 [SwiftNIO SSH](https://github.com/apple/swift-nio-ssh) from Apple and
-[BigInt](https://github.com/attaswift/BigInt) by Károly Lőrentey.
+[BigInt](https://github.com/attaswift/BigInt) by Károly Lőrentey. The Mac app
+updates itself with [Sparkle](https://sparkle-project.org).
 
 ## License
 

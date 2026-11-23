@@ -54,6 +54,34 @@ press keys, write a report of the session — which is how most protocol work
 here was checked against real computers. `DebugAutomation.swift` lists the
 variables.
 
+## Making a release
+
+For whoever holds the keys. A release is a version in `Config/Base.xcconfig`,
+a section for it in `CHANGELOG.md`, and then:
+
+```sh
+scripts/sync-changelog.sh        # the app shows what is new from its own copy
+SPARKLE_KEY=... scripts/release-mac.sh dist     # signed, notarised, with its update feed
+scripts/update-trial.sh --shown OpenScreens-<last>.dmg dist/OpenScreens-<this>.dmg
+scripts/publish-mac.sh dist                     # the release on GitHub
+scripts/release-ios.sh                          # the build for TestFlight
+```
+
+Each script says at its top which keys it wants and where they come from.
+The Mac release is three files, and installed copies of the app find the
+third, `appcast.xml`, on the newest release: a release published without it
+is one they never hear of.
+
+`update-trial.sh` is the release being taken as an update, by a copy of the
+release people have, on your Mac and without touching the app you have
+installed. It is the older version that does the updating, so this is the
+only look there is at what is about to happen on everyone's Mac. Publish
+what came through it.
+
+The icon is `Apps/Shared/AppIcon.icon`; after changing it,
+`swift scripts/render-icon.swift` redraws the pictures of it in the
+read-me.
+
 ## What a change needs
 
 - **One thing per pull request**, described by what it does for the person
