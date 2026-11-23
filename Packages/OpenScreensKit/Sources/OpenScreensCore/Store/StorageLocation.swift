@@ -60,6 +60,11 @@ public enum StorageLocation {
         baseDirectory.appending(path: "KnownHosts.json")
     }
 
+    /// Screen sharing servers trusted by their certificate or their key.
+    public static var trustedServersFile: URL {
+        baseDirectory.appending(path: "TrustedServers.json")
+    }
+
     /// Defaults shared with extensions when the app group is available.
     public static var defaults: UserDefaults {
         if isIsolated, let isolated = UserDefaults(suiteName: "com.burakgon.openscreens.isolated") {

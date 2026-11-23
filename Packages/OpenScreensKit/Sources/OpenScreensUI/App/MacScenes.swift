@@ -185,7 +185,8 @@ struct SessionWindow: View {
         case .connecting, .idle: return "Connecting…"
         case .reconnecting: return "Reconnecting…"
         case .awaitingCredentials: return "Waiting for sign in"
-        case .awaitingHostKey: return "Verifying the SSH server"
+        case .awaitingHostKey(let prompt):
+            return prompt.subject == .sshServer ? "Verifying the SSH server" : "Verifying the computer"
         case .failed: return "Not connected"
         case .ended: return ""
         }

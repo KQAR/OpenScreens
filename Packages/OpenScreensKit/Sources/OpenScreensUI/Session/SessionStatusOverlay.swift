@@ -170,7 +170,8 @@ private struct FailureCard: View {
     }
 }
 
-/// Asks the user to vouch for an SSH server's key.
+/// Asks the user to vouch for what a server proves its identity with: an
+/// SSH server's key, or a computer's own certificate or key.
 struct HostKeyCard: View {
     let computer: Computer
     let prompt: RemoteSession.HostKeyPrompt
@@ -178,15 +179,35 @@ struct HostKeyCard: View {
     let onCancel: () -> Void
 
     private var server: String {
-        prompt.port == 22 ? prompt.host : "\(prompt.host), port \(prompt.port)"
+        let usualPort = prompt.subject == .sshServer ? 22 : Computer.defaultPort
+        return prompt.port == usualPort ? prompt.host : "\(prompt.host), port \(prompt.port)"
+    }
+
+    /// What was presented, in a word.
+    private var presented: String {
+        switch prompt.subject {
+        case .sshServer, .serverKey: "key"
+        case .certificate: "certificate"
+        }
+    }
+
+    private var title: String {
+        switch (prompt.subject, prompt.keyHasChanged) {
+        case (.sshServer, false): "Verify the SSH Server"
+        case (.sshServer, true): "The SSH Server's Key Has Changed"
+        case (_, false): "Verify This Computer"
+        case (.certificate, true): "This Computer's Certificate Has Changed"
+        case (.serverKey, true): "This Computer's Key Has Changed"
+        }
     }
 
     var body: some View {
         VStack(spacing: 16) {
             CardHeader(
                 computer: computer,
-                title: prompt.keyHasChanged ? "The SSH Server's Key Has Changed" : "Verify the SSH Server",
-                symbolName: prompt.keyHasChanged ? "exclamationmark.shield" : "key.horizontal",
+                title: title,
+                symbolName: prompt.keyHasChanged ? "exclamationmark.shield"
+                    : prompt.subject == .sshServer ? "key.horizontal" : "lock.shield",
                 tint: prompt.keyHasChanged ? .red : .accentColor)
 
             Text(explanation)
@@ -208,7 +229,8 @@ struct HostKeyCard: View {
             HStack(spacing: 12) {
                 if prompt.keyHasChanged {
                     // The safe answer is the default one.
-                    Button("Trust New Key", role: .destructive, action: onTrust)
+                    Button(prompt.subject == .certificate ? "Trust New Certificate" : "Trust New Key",
+                           role: .destructive, action: onTrust)
                         .buttonStyle(.glass)
                     Button("Cancel", role: .cancel, action: onCancel)
                         .buttonStyle(.glassProminent)
@@ -230,9 +252,17 @@ struct HostKeyCard: View {
 
     private var explanation: String {
         if prompt.keyHasChanged {
-            return "\(server) is not presenting the key OpenScreens trusted before. Someone may be intercepting the connection, or the server was set up again. Continue only if you know why the key changed."
+            let subject = prompt.subject == .sshServer ? "the server" : "its screen sharing"
+            return "\(server) is not presenting the \(presented) OpenScreens trusted before. Someone may be intercepting the connection, or \(subject) was set up again. Continue only if you know why the \(presented) changed."
         }
-        return "OpenScreens has not connected to \(server) before. To be sure it is the right server, compare this fingerprint with the one the server reports for its \(prompt.keyType) key."
+        switch prompt.subject {
+        case .sshServer:
+            return "OpenScreens has not connected to \(server) before. To be sure it is the right server, compare this fingerprint with the one the server reports for its \(prompt.keyType) key."
+        case .certificate:
+            return "\(server) encrypts the connection with a certificate of its own, which no authority has signed. To be sure it is the right computer, compare this with the certificate's SHA-256 fingerprint there."
+        case .serverKey:
+            return "\(server) encrypts the connection with a key of its own. To be sure it is the right computer, compare the first part of this with the signature its VNC server shows."
+        }
     }
 
     private func fingerprint(_ label: String, _ value: String) -> some View {

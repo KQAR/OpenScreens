@@ -20,6 +20,9 @@ public final class AppModel {
     public let sync: CloudSyncEngine
     public let sshKeys: SSHKeyStore
     public let knownHosts: KnownHostsStore
+    /// Screen sharing servers trusted by the certificate or the key they
+    /// present.
+    public let trustedServers: KnownHostsStore
     /// The optional lock in front of everything, shared by every window.
     public let lock: AppLock
 
@@ -53,6 +56,9 @@ public final class AppModel {
         let knownHosts = isIsolated && !StorageLocation.isIsolated
             ? KnownHostsStore(fileURL: nil)
             : KnownHostsStore()
+        let trustedServers = isIsolated && !StorageLocation.isIsolated
+            ? KnownHostsStore.screenSharingServers(fileURL: nil)
+            : KnownHostsStore.screenSharingServers()
         // Keys go in the same keychain as the passwords, under the stricter
         // setting the key store asks for.
         let sshKeys = isIsolated ? SSHKeyStore(storage: secrets) : SSHKeyStore()
@@ -61,10 +67,11 @@ public final class AppModel {
         self.credentials = credentials
         self.sshKeys = sshKeys
         self.knownHosts = knownHosts
+        self.trustedServers = trustedServers
         self.lock = AppLock(startsUnlocked: !settings.requiresAuthentication)
         self.sessions = SessionManager(
             library: library, credentials: credentials, settings: settings,
-            sshKeys: sshKeys, knownHosts: knownHosts)
+            sshKeys: sshKeys, knownHosts: knownHosts, trustedServers: trustedServers)
         self.nearby = NearbyBrowser()
         self.tailscale = TailscaleDirectory(credentials: credentials) { [settings] in
             settings.tailscaleEnabled ? .automatic(tailnet: settings.tailnet) : .off
@@ -199,6 +206,7 @@ public final class AppModel {
         }
         // This also starts the list afresh when it could not be read.
         try? knownHosts.removeAll()
+        try? trustedServers.removeAll()
         PreviewStore.shared.removeAll()
         settings.reset()
         if !everywhere {
@@ -228,19 +236,22 @@ public final class SessionManager {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let sshKeys: SSHKeyStore
     @ObservationIgnored private let knownHosts: KnownHostsStore
+    @ObservationIgnored private let trustedServers: KnownHostsStore
 
     init(
         library: LibraryStore,
         credentials: CredentialStore,
         settings: AppSettings,
         sshKeys: SSHKeyStore,
-        knownHosts: KnownHostsStore
+        knownHosts: KnownHostsStore,
+        trustedServers: KnownHostsStore
     ) {
         self.library = library
         self.credentials = credentials
         self.settings = settings
         self.sshKeys = sshKeys
         self.knownHosts = knownHosts
+        self.trustedServers = trustedServers
     }
 
     public func session(_ id: RemoteSession.ID?) -> RemoteSession? {
@@ -279,7 +290,8 @@ public final class SessionManager {
             credentials: credentials,
             settings: settings,
             sshKeys: sshKeys,
-            knownHosts: knownHosts)
+            knownHosts: knownHosts,
+            trustedServers: trustedServers)
         sessions.append(session)
         return session
     }
@@ -312,7 +324,8 @@ public final class SessionManager {
             credentials: credentials,
             settings: settings,
             sshKeys: sshKeys,
-            knownHosts: knownHosts)
+            knownHosts: knownHosts,
+            trustedServers: trustedServers)
         if let password = target.password, !password.isEmpty {
             try? credentials.setPassword(password, for: computer.id)
         }

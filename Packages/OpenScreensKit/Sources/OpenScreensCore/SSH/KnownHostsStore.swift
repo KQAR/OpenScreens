@@ -3,6 +3,9 @@ import Synchronization
 
 /// A server's host key, reduced to what a trust decision needs: its algorithm
 /// and its SHA-256 fingerprint.
+///
+/// A screen sharing server that proves who it is with a certificate, or with
+/// a key of its own, is recorded the same way: see ``ServerIdentity``.
 public struct SSHHostKey: Codable, Hashable, Sendable {
     /// The SSH name of the key's algorithm, such as `ssh-ed25519`.
     public var type: String
@@ -29,8 +32,9 @@ public struct SSHHostKey: Codable, Hashable, Sendable {
     }
 }
 
-/// The SSH servers this device has agreed to trust, and the key each one
-/// proved its identity with.
+/// The servers this device has agreed to trust, and the key each one proved
+/// its identity with: SSH servers in one file, and in another the screen
+/// sharing servers that present a certificate or a key of their own.
 ///
 /// This is trust on first use: the first connection to a server records its
 /// key, and every later connection must present a key that is on record.
@@ -113,18 +117,41 @@ public final class KnownHostsStore: Sendable {
         var schemaVersion: Int
     }
 
+    /// Which servers a store keeps, for the words it explains itself in.
+    public enum Subject: Sendable {
+        case sshServers
+        /// Screen sharing servers that present a certificate or a key.
+        case screenSharingServers
+
+        fileprivate var list: String {
+            switch self {
+            case .sshServers: "The list of trusted SSH servers"
+            case .screenSharingServers: "The list of trusted screen sharing servers"
+            }
+        }
+    }
+
     /// Serialises every read-modify-write of a known hosts file in this
     /// process, whichever instance performs it.
     private static let fileLock = Mutex(())
 
     private let fileURL: URL?
+    private let subject: Subject
     /// The entries of a store that has no file.
     private let memory = Mutex(Document())
 
     /// Creates a store backed by a JSON file. Pass `nil` for a store that
     /// lives in memory, for tests and previews.
-    public init(fileURL: URL? = StorageLocation.knownHostsFile) {
+    public init(fileURL: URL? = StorageLocation.knownHostsFile, subject: Subject = .sshServers) {
         self.fileURL = fileURL
+        self.subject = subject
+    }
+
+    /// The store of screen sharing servers, in its own file.
+    public static func screenSharingServers(
+        fileURL: URL? = StorageLocation.trustedServersFile
+    ) -> KnownHostsStore {
+        KnownHostsStore(fileURL: fileURL, subject: .screenSharingServers)
     }
 
     // MARK: Checking
@@ -238,7 +265,7 @@ public final class KnownHostsStore: Sendable {
         }
         try Self.fileLock.withLock { _ in
             do {
-                _ = try Self.load(fileURL)
+                _ = try Self.load(fileURL, subject)
             } catch {
                 let aside = fileURL.deletingPathExtension()
                     .appendingPathExtension("unreadable-\(Int(Date.now.timeIntervalSince1970)).json")
@@ -264,8 +291,8 @@ public final class KnownHostsStore: Sendable {
         guard let fileURL else {
             return memory.withLock { body($0) }
         }
-        let document = try Self.fileLock.withLock { _ throws(Unreadable) in
-            try Self.load(fileURL)
+        let document = try Self.fileLock.withLock { [subject] _ throws(Unreadable) in
+            try Self.load(fileURL, subject)
         }
         return body(document)
     }
@@ -278,7 +305,7 @@ public final class KnownHostsStore: Sendable {
         return try Self.fileLock.withLock { _ in
             // If the file is there but cannot be read, this throws rather than
             // replace records it never saw.
-            let recorded = try Self.load(fileURL)
+            let recorded = try Self.load(fileURL, subject)
             var document = recorded
             let result = change(&document)
             guard document != recorded else { return result }
@@ -292,7 +319,7 @@ public final class KnownHostsStore: Sendable {
     }
 
     /// Reads the file, and does nothing else to it.
-    private static func load(_ fileURL: URL) throws(Unreadable) -> Document {
+    private static func load(_ fileURL: URL, _ subject: Subject) throws(Unreadable) -> Document {
         let data: Data
         do {
             data = try Data(contentsOf: fileURL)
@@ -301,7 +328,7 @@ public final class KnownHostsStore: Sendable {
             return Document()
         } catch {
             throw Unreadable(
-                reason: "The list of trusted SSH servers could not be read. \(error.localizedDescription)")
+                reason: "\(subject.list) could not be read. \(error.localizedDescription)")
         }
         let decoder = JSONDecoder()
         // A newer layout may be arranged differently, or record things this
@@ -310,11 +337,11 @@ public final class KnownHostsStore: Sendable {
         if let layout = try? decoder.decode(Layout.self, from: data),
            layout.schemaVersion > Document.currentSchemaVersion {
             throw Unreadable(
-                reason: "The list of trusted SSH servers was saved by a newer version of OpenScreens, "
+                reason: "\(subject.list) was saved by a newer version of OpenScreens, "
                     + "which this version cannot read.")
         }
         guard let document = try? decoder.decode(Document.self, from: data) else {
-            throw Unreadable(reason: "The list of trusted SSH servers is damaged and cannot be read.")
+            throw Unreadable(reason: "\(subject.list) is damaged and cannot be read.")
         }
         return document
     }

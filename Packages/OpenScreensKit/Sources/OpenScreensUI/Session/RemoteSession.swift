@@ -19,7 +19,8 @@ public final class RemoteSession: Identifiable {
         case idle
         case connecting
         case awaitingCredentials(CredentialPrompt)
-        /// The SSH server presented a key the user has to vouch for.
+        /// A server presented a key or a certificate the user has to vouch
+        /// for: the SSH server of a tunnel, or the computer itself.
         case awaitingHostKey(HostKeyPrompt)
         case connected
         case reconnecting(attempt: Int)
@@ -42,8 +43,19 @@ public final class RemoteSession: Identifiable {
         public var asksForUsername: Bool
     }
 
-    /// An SSH server's key, put to the user before the connection goes on.
+    /// What a server proves its identity with, put to the user before the
+    /// connection goes on.
     public struct HostKeyPrompt: Equatable {
+        public enum Subject: Equatable, Sendable {
+            /// The key of the SSH server a connection is tunnelled through.
+            case sshServer
+            /// The certificate a computer protects its screen sharing with.
+            case certificate
+            /// The key a computer's screen sharing signs in with.
+            case serverKey
+        }
+
+        public var subject: Subject = .sshServer
         public var host: String
         public var port: Int
         /// The key's algorithm, such as `ssh-ed25519`.
@@ -103,6 +115,10 @@ public final class RemoteSession: Identifiable {
     @ObservationIgnored private let appSettings: AppSettings
     @ObservationIgnored private let sshKeys: SSHKeyStore
     @ObservationIgnored private let knownHosts: KnownHostsStore
+    @ObservationIgnored private let trustedServers: KnownHostsStore
+    /// Why an attempt ended, when it ended over the computer's certificate
+    /// or key and not over a password.
+    @ObservationIgnored private var identityFailure: String?
 
     private var credentialPrompt: CredentialPrompt?
     private var hostKeyPrompt: HostKeyPrompt?
@@ -161,7 +177,8 @@ public final class RemoteSession: Identifiable {
         credentials: CredentialStore,
         settings: AppSettings,
         sshKeys: SSHKeyStore = SSHKeyStore(storage: InMemorySecretStorage()),
-        knownHosts: KnownHostsStore = KnownHostsStore(fileURL: nil)
+        knownHosts: KnownHostsStore = KnownHostsStore(fileURL: nil),
+        trustedServers: KnownHostsStore = .screenSharingServers(fileURL: nil)
     ) {
         self.computer = computer
         self.isSaved = isSaved
@@ -171,6 +188,7 @@ public final class RemoteSession: Identifiable {
         self.appSettings = settings
         self.sshKeys = sshKeys
         self.knownHosts = knownHosts
+        self.trustedServers = trustedServers
         self.requestedQuality = computer.settings.quality
         let engine = VNCSession(configuration: Self.configuration(for: computer))
         self.engine = engine
@@ -338,10 +356,11 @@ public final class RemoteSession: Identifiable {
     private func connect(username: String?, password: String, remember: Bool) {
         connectTask?.cancel()
         failureMessage = nil
+        identityFailure = nil
         didRunConnectActions = false
         pendingCredentials = (username, password, remember)
 
-        var configuration = Self.configuration(for: computer)
+        var configuration = sessionConfiguration()
         let tunnelFailure = TunnelFailure()
         if computer.ssh.isEnabled {
             switch tunnelIdentity(screenSharingUsername: username, screenSharingPassword: password) {
@@ -392,16 +411,26 @@ public final class RemoteSession: Identifiable {
                 return
             } catch VNCError.authenticationFailed(let reason) {
                 self.pendingCredentials = nil
-                self.credentialPrompt = CredentialPrompt(
-                    message: Self.authenticationMessage(reason),
-                    username: username ?? "",
-                    asksForUsername: self.computer.kind.isApple || username != nil)
+                if let identityFailure = self.identityFailure {
+                    // Asking for the password again would not help.
+                    self.failureMessage = identityFailure
+                } else if reason.hasPrefix("TLS handshake failed") {
+                    self.failureMessage = "A protected connection to the computer could not be set up. \(reason)"
+                } else {
+                    let needsUsername = reason == VNCProtocolError.usernameRequiredReason
+                    self.credentialPrompt = CredentialPrompt(
+                        message: needsUsername ? nil : Self.authenticationMessage(reason),
+                        username: username ?? "",
+                        asksForUsername: self.computer.kind.isApple || username != nil || needsUsername)
+                }
             } catch {
                 if let tunnelError = tunnelFailure.take() {
                     self.tunnelFailed(tunnelError)
                 } else {
                     self.pendingCredentials = nil
-                    self.failureMessage = Self.describe(error)
+                    // A certificate that was turned down ends the TLS
+                    // handshake, which reports it in its own words.
+                    self.failureMessage = self.identityFailure ?? Self.describe(error)
                 }
             }
         }
@@ -477,8 +506,50 @@ public final class RemoteSession: Identifiable {
         }
     }
 
+    // MARK: - The computer's own certificate or key
+
+    /// The engine's configuration for this computer, with the questions the
+    /// engine has for the user routed to this session.
+    private func sessionConfiguration() -> VNCConfiguration {
+        var configuration = Self.configuration(for: computer)
+        configuration.certificateValidationHandler = { [weak self] request in
+            guard let self, let certificate = request.certificateChainDER.first else { return .reject }
+            return await self.decide(
+                identity: ServerIdentity.certificate(der: certificate), subject: .certificate,
+                host: request.host, port: Int(request.port))
+        }
+        configuration.serverKeyValidationHandler = { [weak self] request in
+            guard let self else { return .reject }
+            return await self.decide(
+                identity: ServerIdentity.serverKey(signature: request.signature, sha256: request.sha256),
+                subject: .serverKey, host: request.host, port: Int(request.port))
+        }
+        return configuration
+    }
+
+    /// Decides about a certificate or a key that nobody has signed: one on
+    /// record goes through, and anything else is the user's to judge.
+    private func decide(
+        identity: SSHHostKey, subject: HostKeyPrompt.Subject, host: String, port: Int
+    ) async -> VNCCertificateValidationResult {
+        let challenge = ServerIdentity.challenge(
+            host: host, port: port, identity: identity, in: trustedServers)
+        if case .storeUnreadable(let reason) = challenge.verdict {
+            identityFailure = "\(reason) \(Self.trustedComputersAdvice)"
+            return .reject
+        }
+        guard await decide(challenge, subject: subject) else {
+            let presented = subject == .certificate ? "certificate" : "key"
+            identityFailure = "The connection was stopped because the computer's \(presented) was not trusted."
+            return .reject
+        }
+        return .acceptAndStore
+    }
+
     /// Asks the user about a host key that is not simply the one on record.
-    private func decide(_ challenge: SSHHostKeyChallenge) async -> Bool {
+    private func decide(
+        _ challenge: SSHHostKeyChallenge, subject: HostKeyPrompt.Subject = .sshServer
+    ) async -> Bool {
         let expected: String?
         switch challenge.verdict {
         case .trusted:
@@ -495,6 +566,7 @@ public final class RemoteSession: Identifiable {
         }
         guard !hasEnded else { return false }
         let prompt = HostKeyPrompt(
+            subject: subject,
             host: challenge.host, port: challenge.port,
             keyType: challenge.keyType, fingerprint: challenge.fingerprint,
             expectedFingerprint: expected)
@@ -525,6 +597,8 @@ public final class RemoteSession: Identifiable {
     /// What can be done when the list of trusted servers cannot be read.
     /// Shown after the reason, here and in the file browser.
     static let trustedServersAdvice = "You can start a new list under SSH Keys in Settings."
+    /// The same for the list of computers trusted by a certificate or key.
+    static let trustedComputersAdvice = "You can start a new list of trusted computers under SSH Keys in Settings."
 
     /// Continues, or stops, after the user has looked at a host key.
     public func answerHostKey(trust: Bool) {
@@ -742,7 +816,7 @@ public final class RemoteSession: Identifiable {
             || newSettings.syncVideoToAudio != old.syncVideoToAudio
             || newSettings.frameRate != old.frameRate
         if needsReconnect, isConnected {
-            var configuration = Self.configuration(for: computer)
+            var configuration = sessionConfiguration()
             // The tunnel, if there is one, carries the new connection too.
             configuration.transportProvider = engine.configuration.transportProvider
             engine.reconnect(with: configuration)
@@ -1382,12 +1456,18 @@ public final class RemoteSession: Identifiable {
                 break
             }
         }
-        return error.localizedDescription
+        let description = error.localizedDescription
+        // What a TLS library says about a handshake is not for reading.
+        if description.contains("handshakeFailed") || description.contains("SSL routines") {
+            return "A protected connection to the computer could not be set up."
+        }
+        return description
     }
 
     private static func describe(_ encryption: VNCContentEncryption?) -> String? {
         switch encryption {
         case .tlsX509: "TLS"
+        case .rsaAES(let keyBits): "AES-\(keyBits)"
         case .appleComCryption(_, let keyLength, let mediaSRTP):
             "AES" + (keyLength.map { "-\($0)" } ?? "") + (mediaSRTP ? " + SRTP" : "")
         // Signing in and typing are protected even then; the picture is not.

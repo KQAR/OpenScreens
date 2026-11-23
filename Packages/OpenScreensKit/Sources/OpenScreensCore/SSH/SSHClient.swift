@@ -45,6 +45,17 @@ public struct SSHHostKeyChallenge: Sendable {
     /// The store the verdict came from.
     public let knownHosts: KnownHostsStore
 
+    public init(
+        host: String, port: Int, key: SSHHostKey,
+        verdict: KnownHostsStore.Verdict, knownHosts: KnownHostsStore
+    ) {
+        self.host = host
+        self.port = port
+        self.key = key
+        self.verdict = verdict
+        self.knownHosts = knownHosts
+    }
+
     /// The SSH name of the key's algorithm, such as `ssh-ed25519`.
     public var keyType: String { key.type }
 

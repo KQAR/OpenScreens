@@ -183,6 +183,9 @@ struct SSHKeysSettingsPane: View {
     @State private var hosts: [KnownHostsStore.Entry] = []
     /// Why the list of trusted servers cannot be shown, when it cannot.
     @State private var hostsProblem: String?
+    /// Computers trusted by the certificate or key of their screen sharing.
+    @State private var computers: [KnownHostsStore.Entry] = []
+    @State private var computersProblem: String?
     @State private var naming: Naming?
     @State private var nameText = ""
     @State private var isImporting = false
@@ -249,7 +252,7 @@ struct SSHKeysSettingsPane: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(hosts) { host in
-                    hostRow(host)
+                    hostRow(host, defaultPort: 22, in: model.knownHosts)
                 }
             } header: {
                 Text("Trusted Servers")
@@ -258,6 +261,29 @@ struct SSHKeysSettingsPane: View {
                     Text("SSH servers whose keys you chose to trust. Forget one to be shown its key again the next time you connect.")
                 } else {
                     Text("Without this list OpenScreens cannot tell whether a server's key has changed, so it will not connect over SSH. A new list starts empty: you are shown each server's key again the next time you connect, and should check it as you did the first time. The old list is kept as a file beside the new one.")
+                }
+            }
+
+            Section {
+                if let computersProblem {
+                    Text(computersProblem)
+                    Button("Start a New List", systemImage: "arrow.counterclockwise", role: .destructive) {
+                        startNewComputerList()
+                    }
+                } else if computers.isEmpty {
+                    Text("None yet")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(computers) { computer in
+                    hostRow(computer, defaultPort: Computer.defaultPort, in: model.trustedServers)
+                }
+            } header: {
+                Text("Trusted Computers")
+            } footer: {
+                if computersProblem == nil {
+                    Text("Computers whose screen sharing protects itself with a certificate or a key of its own, as VNC servers on Linux, Windows and Raspberry Pi do, and which you chose to trust. Forget one to be shown its fingerprint again the next time you connect.")
+                } else {
+                    Text("Without this list OpenScreens cannot tell whether one of these computers has changed its certificate or key, so it will not connect to them. A new list starts empty, and the old one is kept as a file beside it.")
                 }
             }
         }
@@ -364,10 +390,12 @@ struct SSHKeysSettingsPane: View {
         #endif
     }
 
-    private func hostRow(_ host: KnownHostsStore.Entry) -> some View {
+    private func hostRow(
+        _ host: KnownHostsStore.Entry, defaultPort: Int, in store: KnownHostsStore
+    ) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(host.port == 22 ? host.host : "\(host.host):\(host.port)")
+                Text(host.port == defaultPort ? host.host : "\(host.host):\(host.port)")
                 ForEach(host.keys, id: \.self) { key in
                     Text("\(key.type) · \(key.fingerprint)")
                         .font(.system(.caption, design: .monospaced))
@@ -378,7 +406,7 @@ struct SSHKeysSettingsPane: View {
             }
             Spacer(minLength: 8)
             Button("Forget", role: .destructive) {
-                try? model.knownHosts.remove(host: host.host, port: host.port)
+                try? store.remove(host: host.host, port: host.port)
                 reload()
             }
             .buttonStyle(.borderless)
@@ -413,6 +441,22 @@ struct SSHKeysSettingsPane: View {
             hosts = []
             hostsProblem = error.reason
         }
+        do {
+            computers = try model.trustedServers.all()
+            computersProblem = nil
+        } catch {
+            computers = []
+            computersProblem = error.reason
+        }
+    }
+
+    private func startNewComputerList() {
+        do {
+            try model.trustedServers.removeAll()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        reload()
     }
 
     private func startNewHostList() {
