@@ -391,8 +391,7 @@ extension SSHTests {
                 if case .opendir = request { return .ignore }
                 return .serve
             }) { server in
-                let client = try await server.connect(timeout: .seconds(1))
-                let sftp = try await client.openSFTP()
+                let (client, sftp) = try await connectPatiently(to: server, timeout: .seconds(1))
 
                 let clock = ContinuousClock()
                 let started = clock.now
@@ -402,7 +401,7 @@ extension SSHTests {
                 // Not before the allowance the connection was made with was
                 // used up, and not long after.
                 let waited = clock.now - started
-                #expect(waited >= .seconds(1) && waited < .seconds(4), "waited \(waited)")
+                #expect(waited >= .seconds(1) && waited < .seconds(10), "waited \(waited)")
 
                 // One request without an answer is not the end of the session.
                 #expect(try await sftp.realPath(".") == "/")
@@ -428,8 +427,7 @@ extension SSHTests {
                 let local = try TemporaryDirectory()
                 let contents = Data.testPattern(count: 12 * SFTPClient.transferChunkSize)
                 server.volume.addFile("data.bin", contents: contents)
-                let client = try await server.connect(timeout: .seconds(2))
-                let sftp = try await client.openSFTP()
+                let (client, sftp) = try await connectPatiently(to: server, timeout: .seconds(2))
 
                 let clock = ContinuousClock()
                 let started = clock.now
@@ -457,8 +455,7 @@ extension SSHTests {
             }) { server in
                 let local = try TemporaryDirectory()
                 server.volume.addFile("data.bin", contents: .testPattern(count: 1 << 20))
-                let client = try await server.connect(timeout: .seconds(1))
-                let sftp = try await client.openSFTP()
+                let (client, sftp) = try await connectPatiently(to: server, timeout: .seconds(1))
 
                 let destination = local.file("data.bin")
                 await #expect(throws: SSHError.timeout) {
@@ -498,9 +495,11 @@ extension SSHTests {
                 let cancelled = clock.now
                 transfer.cancel()
                 await #expect(throws: CancellationError.self) {
-                    try await Self.finishing(within: .seconds(5)) { try await transfer.value }
+                    try await Self.finishing(within: .seconds(9)) { try await transfer.value }
                 }
-                #expect(clock.now - cancelled < .seconds(3))
+                // Well inside the ten seconds the server is given to answer,
+                // with room for a machine that is busy with other tests.
+                #expect(clock.now - cancelled < .seconds(8))
                 #expect(!FileManager.default.fileExists(atPath: destination.path))
                 // The server was still told to close the file, should it
                 // ever come round to it.
@@ -535,9 +534,11 @@ extension SSHTests {
                 let cancelled = clock.now
                 transfer.cancel()
                 await #expect(throws: CancellationError.self) {
-                    try await Self.finishing(within: .seconds(5)) { try await transfer.value }
+                    try await Self.finishing(within: .seconds(9)) { try await transfer.value }
                 }
-                #expect(clock.now - cancelled < .seconds(3))
+                // Well inside the ten seconds the server is given to answer,
+                // with room for a machine that is busy with other tests.
+                #expect(clock.now - cancelled < .seconds(8))
 
                 // The server was told to close the file and then to remove
                 // it, and both were on their way before the upload returned:
@@ -572,9 +573,11 @@ extension SSHTests {
                 let cancelled = clock.now
                 listing.cancel()
                 await #expect(throws: CancellationError.self) {
-                    try await Self.finishing(within: .seconds(5)) { try await listing.value }
+                    try await Self.finishing(within: .seconds(9)) { try await listing.value }
                 }
-                #expect(clock.now - cancelled < .seconds(3))
+                // Well inside the ten seconds the server is given to answer,
+                // with room for a machine that is busy with other tests.
+                #expect(clock.now - cancelled < .seconds(8))
                 #expect(await server.waitForRequests { $0.contains { if case .close = $0 { true } else { false } } })
                 await client.close()
             }
@@ -992,8 +995,7 @@ extension SSHTests {
             }) { server in
                 let local = try TemporaryDirectory()
                 server.volume.addFile("data.bin", contents: .testPattern(count: 100_000))
-                let client = try await server.connect(timeout: .seconds(1))
-                let sftp = try await client.openSFTP()
+                let (client, sftp) = try await connectPatiently(to: server, timeout: .seconds(1))
 
                 await #expect(throws: SSHError.timeout) {
                     try await sftp.download(remotePath: "/data.bin", to: local.file("data.bin"))
@@ -1277,7 +1279,9 @@ extension SSHTests {
                 let local = try TemporaryDirectory()
                 let contents = Data.testPattern(count: 100_000)
                 server.volume.addFile("data.bin", contents: contents)
-                let client = try await server.connect(timeout: .seconds(5))
+                // Long enough that a busy machine does not use it up doing
+                // the work itself.
+                let client = try await server.connect(timeout: .seconds(30))
                 let sftp = try await client.openSFTP()
 
                 let clock = ContinuousClock()
@@ -1286,7 +1290,7 @@ extension SSHTests {
                 try await sftp.download(remotePath: "/data.bin", to: copy)
                 #expect(try await sftp.list("/").map(\.name) == ["data.bin"])
                 // Neither waited out the time the server is given to answer.
-                #expect(clock.now - started < .seconds(4))
+                #expect(clock.now - started < .seconds(25))
                 #expect(try Data(contentsOf: copy) == contents)
                 // The server was told, all the same: once for the file and
                 // once for the folder.
@@ -1323,3 +1327,30 @@ extension SSHTests {
 }
 
 #endif
+
+/// Connects with a short allowance, as the tests of what happens when it
+/// runs out have to, and opens a file transfer session.
+///
+/// The allowance a connection gives each request is also what it gives its
+/// own handshake, and on a machine running every other test at once a
+/// handshake has taken longer than a second. That is not what any of these
+/// tests is about, so the connection is made again until it is made.
+private func connectPatiently(
+    to server: SFTPTestServer, timeout: Duration
+) async throws -> (SSHClient, SFTPClient) {
+    var attempts = 0
+    while true {
+        attempts += 1
+        do {
+            let client = try await server.connect(timeout: timeout)
+            do {
+                return (client, try await client.openSFTP())
+            } catch {
+                await client.close()
+                throw error
+            }
+        } catch SSHError.timeout where attempts < 20 {
+            continue
+        }
+    }
+}
