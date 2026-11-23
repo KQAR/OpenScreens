@@ -5,12 +5,13 @@ import RFBProtocol
 /// subtypes are deliberately not selected because modern TLS stacks no longer
 /// support the anonymous cipher suites they require. The subtypes with no TLS
 /// at all, which a server such as TigerVNC lists beside the others, are what
-/// is left when nothing with a certificate is on offer.
+/// is left when nothing with a certificate is on offer: VNC authentication
+/// and none. Plain without TLS is not among them. It would put a user name
+/// and the password of an account on the wire for anyone to read.
 public struct VeNCryptAuthenticator: Authenticator, Sendable {
     private enum Subtype: UInt32, Sendable {
         case none = 1
         case vnc = 2
-        case plain = 256
         case x509None = 260
         case x509VNC = 261
         case x509Plain = 262
@@ -20,6 +21,8 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
 
     /// The anonymous TLS subtypes, which cannot be used.
     private static let anonymousTLS: Set<UInt32> = [257, 258, 259]
+    /// A user name and password with nothing to protect them.
+    private static let plainWithoutTLS: UInt32 = 256
 
     private let host: String
     private let port: UInt16
@@ -107,7 +110,7 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
         case .vnc, .x509VNC:
             _ = try await VNCAuthenticator(password: password)
                 .authenticate(connection: connection)
-        case .plain, .x509Plain:
+        case .x509Plain:
             try await sendPlainCredentials(connection: connection)
         }
         return AuthenticationResult(establishedTLS: selected.usesTLS)
@@ -125,18 +128,18 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
             wanted += hasUsername ? [.x509Plain, .x509VNC, .x509None] : [.x509VNC, .x509None]
         }
         if !requiresTLS {
-            wanted += hasUsername ? [.plain, .vnc, .none] : [.vnc, .none]
+            wanted += [.vnc, .none]
         }
         return wanted.first { offered.contains($0.rawValue) }
     }
 
     /// What to say when the server offered nothing that could be selected.
     private func whyNothingWasSelected(from offered: [UInt32], canUseTLS: Bool) -> String {
-        let plainSubtypes = [Subtype.x509Plain, .plain].filter {
-            ($0.usesTLS ? canUseTLS : !requiresTLS) && offered.contains($0.rawValue)
-        }
-        if !hasUsername, !plainSubtypes.isEmpty {
+        if !hasUsername, canUseTLS, offered.contains(Subtype.x509Plain.rawValue) {
             return VNCProtocolError.usernameRequiredReason
+        }
+        if offered.contains(Self.plainWithoutTLS), !offered.contains(where: { $0 >= 260 }) {
+            return "This server asks for a user name and password without encrypting them, which is not supported"
         }
         if !canUseTLS, offered.contains(where: { $0 >= 260 }) {
             return "This server protects its connections with TLS, which cannot be used through a tunnel"

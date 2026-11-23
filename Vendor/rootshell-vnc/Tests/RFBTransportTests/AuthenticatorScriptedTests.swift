@@ -179,6 +179,34 @@ final class AuthenticatorScriptedTests: XCTestCase {
         }
     }
 
+    func testVeNCryptNeverSendsAPasswordInTheClear() async throws {
+        // Plain with no TLS: a user name and an account's password as they
+        // are. A server that offers it beside VNC authentication gets that.
+        let connection = ScriptedRFBConnection()
+        await connection.enqueueServerBytes(
+            Self.veNCryptOffer([256, 2]) + Data([1]) + Self.challenge)
+        _ = try await VeNCryptAuthenticator(
+            host: "linux.example", port: 5900, username: "alice", password: "password"
+        ).authenticate(connection: connection)
+        let sent = await connection.sentBytes()
+        XCTAssertEqual(sent, Data([0, 2, 0, 0, 0, 2]) + Self.expectedResponse)
+
+        // And one that offers nothing else is not signed in to.
+        let other = ScriptedRFBConnection()
+        await other.enqueueServerBytes(Self.veNCryptOffer([256]))
+        do {
+            _ = try await VeNCryptAuthenticator(
+                host: "linux.example", port: 5900, username: "alice", password: "password"
+            ).authenticate(connection: other)
+            XCTFail("Expected the sign-in to stop")
+        } catch let error as VNCProtocolError {
+            guard case .authenticationFailed(let reason) = error else { return XCTFail("\(error)") }
+            XCTAssertTrue(reason.contains("without encrypting"), reason)
+        }
+        let otherSent = await other.sentBytes()
+        XCTAssertEqual(otherSent, Data([0, 2]), "nothing but the version is sent")
+    }
+
     func testVeNCryptWithOnlyTLSRequiredTakesNothingOutsideIt() async throws {
         let connection = ScriptedRFBConnection()
         await connection.enqueueServerBytes(Self.veNCryptOffer([258, 2]))
