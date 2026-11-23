@@ -13,10 +13,20 @@
 #   APP_STORE_CONNECT_KEY=/path/to/AuthKey_<key id>.p8 \
 #   APP_STORE_CONNECT_ISSUER=<issuer id> scripts/release-mac.sh
 #
-# A Developer ID certificate is the account holder's to hand out. A key signs
-# with one only if it has been given access to cloud-managed distribution
-# certificates, or if a "Developer ID Application" certificate is in the
-# keychain; otherwise the export stops with a cloud signing permission error.
+# A Developer ID certificate is the account holder's to hand out. Xcode signs
+# with one for a key only if the key has been given access to cloud-managed
+# distribution certificates; otherwise the export stops with a cloud signing
+# permission error.
+#
+# A key without that access can still make a release where the certificate
+# is in the keychain. Name a Developer ID provisioning profile that is
+# installed here and includes it:
+#
+#   DEVELOPER_ID_PROFILE="OpenScreens Developer ID" \
+#   APP_STORE_CONNECT_KEY=... APP_STORE_CONNECT_ISSUER=... scripts/release-mac.sh
+#
+# The app is then signed with the certificate on this Mac and sent to the
+# notary service with notarytool, and the key is asked for nothing else.
 set -eu
 
 OUT="${1:-dist}"
@@ -35,6 +45,49 @@ xcodebuild archive \
     -destination "generic/platform=macOS" \
     -archivePath "$WORK/OpenScreens.xcarchive" \
     -allowProvisioningUpdates "$@" -quiet
+
+if [ -n "${DEVELOPER_ID_PROFILE:-}" ]; then
+    [ -n "${APP_STORE_CONNECT_KEY:-}" ] || {
+        echo "DEVELOPER_ID_PROFILE needs APP_STORE_CONNECT_KEY as well, for the notary service." >&2
+        exit 1
+    }
+    BUNDLE_ID=$(/usr/libexec/PlistBuddy \
+        -c "Print :ApplicationProperties:CFBundleIdentifier" "$WORK/OpenScreens.xcarchive/Info.plist")
+    cat > "$WORK/export.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key><string>developer-id</string>
+    <key>destination</key><string>export</string>
+    <key>signingStyle</key><string>manual</string>
+    <key>signingCertificate</key><string>Developer ID Application</string>
+    <key>teamID</key><string>$TEAM</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>$BUNDLE_ID</key><string>$DEVELOPER_ID_PROFILE</string>
+    </dict>
+</dict>
+</plist>
+PLIST
+
+    echo "Signing with the Developer ID certificate in the keychain..."
+    xcodebuild -exportArchive \
+        -archivePath "$WORK/OpenScreens.xcarchive" \
+        -exportOptionsPlist "$WORK/export.plist" -exportPath "$WORK/notarized"
+    APP="$WORK/notarized/OpenScreens.app"
+
+    echo "Sending to Apple's notary service..."
+    ditto -c -k --keepParent "$APP" "$WORK/OpenScreens.zip"
+    xcrun notarytool submit "$WORK/OpenScreens.zip" \
+        --key "$key_path" --key-id "${key_id#AuthKey_}" --issuer "$APP_STORE_CONNECT_ISSUER" \
+        --wait | tee "$WORK/notary.log"
+    grep -q "status: Accepted" "$WORK/notary.log" || {
+        echo "The notary service did not accept the app." >&2
+        exit 1
+    }
+    xcrun stapler staple "$APP"
+else
 
 cat > "$WORK/upload.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -70,6 +123,9 @@ until xcodebuild -exportNotarizedApp \
 done
 
 APP="$WORK/notarized/OpenScreens.app"
+
+fi
+
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=2 "$APP"
 
