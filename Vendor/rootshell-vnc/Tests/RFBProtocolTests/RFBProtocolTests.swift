@@ -1571,10 +1571,12 @@ final class ConnectionStateMachineTests: XCTestCase {
     private func selection(
         from types: [SecurityType],
         policy: VNCSecurityPolicy = .automatic,
-        transportSupportsTLS: Bool = true
+        transportSupportsTLS: Bool = true,
+        requiresServerIdentity: Bool = false
     ) -> SecurityType? {
         var sm = ConnectionStateMachine(securityPolicy: policy)
         sm.transportSupportsTLS = transportSupportsTLS
+        sm.requiresServerIdentity = requiresServerIdentity
         _ = sm.handle(event: .connected)
         _ = sm.handle(event: .receivedProtocolVersion(.v3_8))
         _ = sm.handle(event: .receivedSecurityTypes(types))
@@ -1621,6 +1623,34 @@ final class ConnectionStateMachineTests: XCTestCase {
         // has inside that needs no TLS.
         XCTAssertEqual(
             selection(from: [.vencrypt], transportSupportsTLS: false), .vencrypt)
+    }
+
+    func testAServerKnownByItsIdentityIsHeldToPresentingIt() {
+        // Someone in between offers a plain sign-in in the server's name.
+        XCTAssertNil(selection(from: [.vncAuthentication], requiresServerIdentity: true))
+        XCTAssertNil(selection(from: [.none, .vncAuthentication], requiresServerIdentity: true))
+        // What the server itself offers still goes through, the sign-in
+        // only forms of RSA-AES included.
+        XCTAssertEqual(
+            selection(from: [.vncAuthentication, .ra2ne], requiresServerIdentity: true), .ra2ne)
+        XCTAssertEqual(
+            selection(from: [.vencrypt, .vncAuthentication], requiresServerIdentity: true), .vencrypt)
+        XCTAssertEqual(
+            selection(from: [.vencrypt, .ra2_256], requiresServerIdentity: true), .ra2_256)
+        XCTAssertNil(selection(
+            from: [.vencrypt, .vncAuthentication], transportSupportsTLS: false,
+            requiresServerIdentity: true))
+    }
+
+    func testAMissingIdentityIsSaidToBeMissing() {
+        var sm = ConnectionStateMachine()
+        sm.requiresServerIdentity = true
+        _ = sm.handle(event: .connected)
+        _ = sm.handle(event: .receivedProtocolVersion(.v3_8))
+        _ = sm.handle(event: .receivedSecurityTypes([.vncAuthentication]))
+        XCTAssertEqual(
+            sm.state,
+            .failed(.authenticationFailed(VNCProtocolError.serverIdentityMissingReason)))
     }
 
     func testRequireEncryptionAcceptsOnlyWhatEncryptsTheSession() {

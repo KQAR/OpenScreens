@@ -432,6 +432,7 @@ public actor TransportSession {
     private let appleMediaTilesPerFrameOverride: UInt64?
     private let certificateValidationHandler: VNCCertificateValidationHandler?
     private let serverKeyValidationHandler: VNCServerKeyValidationHandler?
+    private let requiresServerIdentity: Bool
     /// Environment-backed diagnostics and experiment switches are launch-time
     /// configuration. Materializing ProcessInfo.environment copies and bridges
     /// the complete process environment, so never do it on the RTP hot path.
@@ -918,7 +919,8 @@ public actor TransportSession {
         datagramProvider: AppleMediaDatagramProvider? = nil,
         securityPolicy: VNCSecurityPolicy = .automatic,
         certificateValidationHandler: VNCCertificateValidationHandler? = nil,
-        serverKeyValidationHandler: VNCServerKeyValidationHandler? = nil
+        serverKeyValidationHandler: VNCServerKeyValidationHandler? = nil,
+        requiresServerIdentity: Bool = false
     ) {
         let environment = ProcessInfo.processInfo.environment
         self.runtimeEnvironment = environment
@@ -981,6 +983,7 @@ public actor TransportSession {
         self.username = username
         self.certificateValidationHandler = certificateValidationHandler
         self.serverKeyValidationHandler = serverKeyValidationHandler
+        self.requiresServerIdentity = requiresServerIdentity
         self.requestedDisplayCount = min(2, max(1, displayCount))
         self.virtualDisplayName = virtualDisplayName
         self.requestedFrameRate = max(1, min(120, targetFrameRate))
@@ -1032,6 +1035,7 @@ public actor TransportSession {
         // Establish TCP
         try await tcp.connect()
         stateMachine.transportSupportsTLS = await tcp.supportsTLSUpgrade()
+        stateMachine.requiresServerIdentity = requiresServerIdentity
         if let connectedPeer = await tcp.remoteEndpointHost() {
             appleMediaRemoteHost = Self.selectAppleMediaRemoteHost(
                 dialHost: dialHost,
@@ -2037,6 +2041,9 @@ public actor TransportSession {
                 password: password,
                 certificateValidationHandler: certificateValidationHandler,
                 requiresTLS: stateMachine.securityPolicy == .requireEncryption
+                    || requiresServerIdentity,
+                missingTLSReason: requiresServerIdentity
+                    ? VNCProtocolError.serverIdentityMissingReason : nil
             )
         case .ra2, .ra2ne, .ra2_256, .ra2ne_256:
             let secured = try await RSAAESAuthenticator(

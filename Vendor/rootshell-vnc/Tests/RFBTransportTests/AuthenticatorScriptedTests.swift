@@ -207,6 +207,26 @@ final class AuthenticatorScriptedTests: XCTestCase {
         XCTAssertEqual(otherSent, Data([0, 2]), "nothing but the version is sent")
     }
 
+    func testVeNCryptSaysWhyTLSWasWantedWhenThereIsNone() async throws {
+        // A server known by its certificate that now offers none inside
+        // VeNCrypt: the reason is the one the host knows what to do with.
+        let connection = ScriptedRFBConnection()
+        await connection.enqueueServerBytes(Self.veNCryptOffer([258, 2]))
+        do {
+            _ = try await VeNCryptAuthenticator(
+                host: "linux.example", port: 5900, username: nil, password: "password",
+                requiresTLS: true,
+                missingTLSReason: VNCProtocolError.serverIdentityMissingReason
+            ).authenticate(connection: connection)
+            XCTFail("Expected the sign-in to stop")
+        } catch let error as VNCProtocolError {
+            XCTAssertEqual(
+                error, .authenticationFailed(VNCProtocolError.serverIdentityMissingReason))
+        }
+        let sent = await connection.sentBytes()
+        XCTAssertEqual(sent, Data([0, 2]), "nothing but the version is sent")
+    }
+
     func testVeNCryptWithOnlyTLSRequiredTakesNothingOutsideIt() async throws {
         let connection = ScriptedRFBConnection()
         await connection.enqueueServerBytes(Self.veNCryptOffer([258, 2]))

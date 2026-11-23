@@ -36,6 +36,10 @@ public enum VNCProtocolError: Error, Sendable, Equatable, LocalizedError {
     /// certificate or the key the server presented.
     public static let serverIdentityRejectedReason = "The server's identity was not trusted"
 
+    /// The reason a sign-in ends with when a server that has to prove its
+    /// identity offers no way of signing in that would.
+    public static let serverIdentityMissingReason = "The server does not offer to prove its identity"
+
     // MARK: - LocalizedError
 
     public var errorDescription: String? {

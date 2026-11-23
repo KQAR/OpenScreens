@@ -44,6 +44,12 @@ public struct VNCConfiguration: Sendable {
     /// signature the first time and remember the answer.
     public var serverKeyValidationHandler: VNCServerKeyValidationHandler?
 
+    /// Whether the server has to present a certificate or a key, so that
+    /// only VeNCrypt inside TLS and RSA-AES will do. Set this for a server
+    /// that is already known by one: if it stops presenting it and offers a
+    /// plain sign-in, the password must not be sent.
+    public var requiresServerIdentity = false
+
     /// Compatibility display-count choices. A value of `2` means Apple's
     /// "all displays combined" topology; use ``DisplayMode`` when the exact
     /// native topology matters.

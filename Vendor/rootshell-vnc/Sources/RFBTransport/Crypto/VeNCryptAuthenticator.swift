@@ -31,6 +31,9 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
     private let certificateValidationHandler: VNCCertificateValidationHandler?
     /// Whether only a subtype inside TLS will do.
     private let requiresTLS: Bool
+    /// What to say when TLS is required and the server has none to offer,
+    /// where the reason it is required has words of its own.
+    private let missingTLSReason: String?
     private let log = VNCLogger(category: "VeNCrypt")
 
     public init(
@@ -39,7 +42,8 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
         username: String?,
         password: String,
         certificateValidationHandler: VNCCertificateValidationHandler? = nil,
-        requiresTLS: Bool = false
+        requiresTLS: Bool = false,
+        missingTLSReason: String? = nil
     ) {
         self.host = host
         self.port = port
@@ -47,6 +51,7 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
         self.password = password
         self.certificateValidationHandler = certificateValidationHandler
         self.requiresTLS = requiresTLS
+        self.missingTLSReason = missingTLSReason
     }
 
     public func authenticate(connection: any RFBConnection) async throws -> AuthenticationResult {
@@ -137,6 +142,9 @@ public struct VeNCryptAuthenticator: Authenticator, Sendable {
     private func whyNothingWasSelected(from offered: [UInt32], canUseTLS: Bool) -> String {
         if !hasUsername, canUseTLS, offered.contains(Subtype.x509Plain.rawValue) {
             return VNCProtocolError.usernameRequiredReason
+        }
+        if requiresTLS, let missingTLSReason {
+            return missingTLSReason
         }
         if offered.contains(Self.plainWithoutTLS), !offered.contains(where: { $0 >= 260 }) {
             return "This server asks for a user name and password without encrypting them, which is not supported"

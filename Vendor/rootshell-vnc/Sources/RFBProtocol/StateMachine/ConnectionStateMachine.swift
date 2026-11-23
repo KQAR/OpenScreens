@@ -46,6 +46,11 @@ public struct ConnectionStateMachine: Sendable {
     /// Whether the byte stream under the session can be upgraded to TLS,
     /// which VeNCrypt needs. A tunnel usually cannot.
     public var transportSupportsTLS = true
+    /// Whether only a security type in which the server presents a
+    /// certificate or a key will do. A host sets this for a server it knows
+    /// by one: such a server offering to sign in without it is either set
+    /// up anew or not the server.
+    public var requiresServerIdentity = false
 
     public static let defaultPreferredEncodings: [Encoding] = [
         // Prefer copyRect (cheap) then raw (simple, reliable).
@@ -125,7 +130,9 @@ public struct ConnectionStateMachine: Sendable {
                 let error = VNCProtocolError.authenticationFailed(
                     requiresUsername(types)
                         ? VNCProtocolError.usernameRequiredReason
-                        : "The server does not offer the requested security method")
+                        : requiresServerIdentity && securityPolicy == .automatic
+                            ? VNCProtocolError.serverIdentityMissingReason
+                            : "The server does not offer the requested security method")
                 state = .failed(error)
                 return [.reportError(error)]
             }
@@ -318,6 +325,9 @@ public struct ConnectionStateMachine: Sendable {
                 if types.contains(.apple30) { return .apple30 }
                 if types.contains(.appleSRP) { return .appleSRP }
             }
+            if requiresServerIdentity {
+                return identifyingSecurityType(from: types)
+            }
             // What encrypts the whole session comes first. RSA-AES is taken
             // ahead of VeNCrypt where a server offers both (wayvnc does): it
             // runs over any byte stream, a tunnel included, so the server is
@@ -345,6 +355,18 @@ public struct ConnectionStateMachine: Sendable {
             if types.contains(.none) { return SecurityType.none }
             return nil
         }
+    }
+
+    /// The type to use when the server has to present a certificate or key:
+    /// RSA-AES in any of its forms, or VeNCrypt, which is then held to TLS.
+    private func identifyingSecurityType(from types: [SecurityType]) -> SecurityType? {
+        if let encrypted = SecurityType.rsaAES.first(where: {
+            $0.encryptsSession && types.contains($0)
+        }) {
+            return encrypted
+        }
+        if transportSupportsTLS, types.contains(.vencrypt) { return .vencrypt }
+        return SecurityType.rsaAES.first(where: types.contains)
     }
 
     /// The type to use when nothing unencrypted will do.
@@ -383,6 +405,9 @@ public struct ConnectionStateMachine: Sendable {
         case .appleSRP:
             return type == .appleSRP
         case .automatic:
+            if requiresServerIdentity {
+                return type == .vencrypt || SecurityType.rsaAES.contains(type)
+            }
             switch type {
             case .none, .vncAuthentication, .vencrypt, .apple30, .macAuthentication, .appleSRP,
                  .ra2, .ra2ne, .ra2_256, .ra2ne_256:
