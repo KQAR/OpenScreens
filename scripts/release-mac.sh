@@ -233,6 +233,28 @@ grep -q 'sparkle:edSignature="' "$OUT/appcast.xml" || {
     echo "The update feed was not signed." >&2
     exit 1
 }
+# Both of those were about the key in SPARKLE_KEY. A copy of the app checks
+# with the key it carries, and if the two are not halves of one pair every
+# copy turns this release down. So the disk image's signature is checked
+# once more the way the app will check it, with nothing but the public key
+# from the app that was just built.
+cat > "$WORK/verify.swift" <<'SWIFT'
+import CryptoKit
+import Foundation
+let arguments = CommandLine.arguments
+guard let key = Data(base64Encoded: arguments[1]).flatMap({ try? Curve25519.Signing.PublicKey(rawRepresentation: $0) }),
+      let signature = Data(base64Encoded: arguments[2]),
+      let image = try? Data(contentsOf: URL(fileURLWithPath: arguments[3])),
+      key.isValidSignature(signature, for: image)
+else { exit(1) }
+SWIFT
+swift "$WORK/verify.swift" \
+    "$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP/Contents/Info.plist")" \
+    "$(sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' "$OUT/appcast.xml" | head -1)" \
+    "$DMG" || {
+    echo "The app would not accept this update: SPARKLE_KEY is not the key whose public half it carries." >&2
+    exit 1
+}
 
 echo "Done: $DMG"
 cat "$DMG.sha256"
