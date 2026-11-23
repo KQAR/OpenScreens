@@ -519,6 +519,24 @@ struct CompatibilityLabTests {
         #expect(recorded.first?.keys.map(\.fingerprint) == [prompt.fingerprint])
     }
 
+    /// What someone in between would do: answer in the computer's place and
+    /// offer a sign-in that needs no certificate or key.
+    @Test(arguments: CompatibilityLab.servers.filter { !$0.selfSigned && !$0.presentsKey })
+    func aComputerKnownByItsIdentityIsNotSignedInToWithoutIt(_ server: Server) async throws {
+        let model = try makeModel()
+        try model.trustedServers.trust(
+            host: CompatibilityLab.host, port: server.port,
+            key: SSHHostKey(type: ServerIdentity.certificateType, fingerprint: "what it was before"))
+        let (session, _) = try open(server, in: model)
+        defer { model.sessions.close(session) }
+        _ = await connect(session)
+        guard case .failed(let message) = session.phase else {
+            Issue.record("\(session.phase)")
+            return
+        }
+        #expect(message.contains("is not offering to now"), "\(message)")
+    }
+
     @Test(arguments: CompatibilityLab.serversWithUsers)
     func aServerThatWantsAUserNameAsksForOne(_ server: Server) async throws {
         var nameless = server

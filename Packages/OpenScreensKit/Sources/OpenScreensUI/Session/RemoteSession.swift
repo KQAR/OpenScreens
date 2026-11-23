@@ -428,6 +428,8 @@ public final class RemoteSession: Identifiable {
                 if let identityFailure = self.identityFailure {
                     // Asking for the password again would not help.
                     self.failureMessage = identityFailure
+                } else if reason == VNCProtocolError.serverIdentityMissingReason {
+                    self.failureMessage = "\(self.computer.host) protected its connections with a certificate or key before, and is not offering to now. Someone may be intercepting the connection, or its VNC server was set up again. If you know why, forget the computer under SSH Keys in Settings and connect again."
                 } else if reason.hasPrefix("TLS handshake failed") {
                     self.failureMessage = "A protected connection to the computer could not be set up. \(reason)"
                 } else {
@@ -541,7 +543,21 @@ public final class RemoteSession: Identifiable {
                 identity: ServerIdentity.serverKey(signature: request.signature, sha256: request.sha256),
                 subject: .serverKey, host: request.host, port: Int(request.port))
         }
+        // A computer known by a certificate or key has to go on presenting
+        // one. If what answers in its place offers a sign-in without, the
+        // password stays here. Inside an SSH tunnel it is the SSH server's
+        // key that says who is at the other end.
+        configuration.requiresServerIdentity = !computer.ssh.isEnabled && isKnownByItsIdentity
         return configuration
+    }
+
+    /// Whether a certificate or key is on record for this computer.
+    private var isKnownByItsIdentity: Bool {
+        let nothing = SSHHostKey(type: "", fingerprint: "")
+        if case .mismatch = trustedServers.check(host: computer.host, port: computer.port, key: nothing) {
+            return true
+        }
+        return false
     }
 
     /// Decides about a certificate or a key that nobody has signed: one on

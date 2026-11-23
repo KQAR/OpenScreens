@@ -176,7 +176,8 @@ Pi OS use.
 
 A server that encrypts its connections shows a fingerprint the first time,
 as SSH does. Check it against the server's own, and OpenScreens will stop
-if that computer ever presents another.
+if that computer ever presents another, or stops presenting one and asks
+for your password without.
 
 | Server | Sign-in | Tried against |
 |---|---|---|
@@ -283,7 +284,8 @@ records what was learned about Apple's protocol along the way.
 - An SSH server that only offers an RSA host key, or only
   keyboard-interactive sign-in, is not supported.
 - A VNC server that offers TLS only without a certificate (VeNCrypt's
-  anonymous types) or only UltraVNC's MS-Logon cannot be signed in to.
+  anonymous types) or only UltraVNC's MS-Logon cannot be signed in to, and
+  neither can one that wants a user name and password sent unencrypted.
   Give it a VNC password, or tunnel through SSH.
 - RDP is not supported.
 

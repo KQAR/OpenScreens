@@ -24,6 +24,11 @@ with a Raspberry Pi?
   phone, and again when it is resized or turned. Computers that are not
   Macs now start with **Fit This Display**; **Remote Display** puts the
   desktop back as it was found.
+- **A computer known by its certificate or key has to go on presenting
+  it.** If something answers in its place and offers a sign-in without one,
+  OpenScreens stops before a password is sent, and says why.
+- A server that stops waiting while a fingerprint is being checked, as
+  x11vnc does after twenty seconds, is connected to again once you agree.
 - A server that needs a user name is asked for with a field for one, where
   the prompt used to offer only a password.
 - Turning down a computer's certificate or key says so, where it used to
