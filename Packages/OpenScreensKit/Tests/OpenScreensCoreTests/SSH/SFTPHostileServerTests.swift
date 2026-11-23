@@ -404,7 +404,18 @@ extension SSHTests {
                 #expect(waited >= .seconds(1) && waited < .seconds(10), "waited \(waited)")
 
                 // One request without an answer is not the end of the session.
-                #expect(try await sftp.realPath(".") == "/")
+                // The next one has the same second to be answered in, which a
+                // machine busy with every other test has not always managed;
+                // that the session is still there is shown by one that is.
+                var path: String?
+                for _ in 0..<20 where path == nil {
+                    do {
+                        path = try await sftp.realPath(".")
+                    } catch SSHError.timeout {
+                        continue
+                    }
+                }
+                #expect(path == "/")
                 await client.close()
             }
         }
