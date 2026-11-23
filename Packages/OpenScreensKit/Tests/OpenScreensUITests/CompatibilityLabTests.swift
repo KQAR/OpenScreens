@@ -462,6 +462,22 @@ struct CompatibilityLabTests {
         #expect(await waitUntil { second.phase == .connected }, "\(second.phase)")
     }
 
+    /// Someone reading a fingerprint against the one on the other
+    /// computer takes their time over it.
+    @Test(arguments: CompatibilityLab.serversToVouchFor)
+    func theAnswerCanTakeAsLongAsCheckingAFingerprintTakes(_ server: Server) async throws {
+        let (session, model) = try open(server)
+        defer { model.sessions.close(session) }
+        _ = try #require(await identityPrompt(session), "\(session.phase)")
+        try await Task.sleep(for: .seconds(45))
+        guard case .awaitingHostKey = session.phase else {
+            Issue.record("the question went away: \(session.phase)")
+            return
+        }
+        session.answerHostKey(trust: true)
+        #expect(await waitUntil { session.phase == .connected }, "\(session.phase)")
+    }
+
     @Test(arguments: CompatibilityLab.serversToVouchFor)
     func aComputerThatIsNotVouchedForIsNotConnectedTo(_ server: Server) async throws {
         let (session, model) = try open(server)

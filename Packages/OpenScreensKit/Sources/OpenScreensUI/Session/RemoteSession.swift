@@ -119,6 +119,12 @@ public final class RemoteSession: Identifiable {
     /// Why an attempt ended, when it ended over the computer's certificate
     /// or key and not over a password.
     @ObservationIgnored private var identityFailure: String?
+    /// Whether the user was asked about the computer's certificate or key
+    /// during the attempt under way, and agreed to it.
+    @ObservationIgnored private var identityWasJustTrusted = false
+    /// What to sign in with again, when the attempt ended while the user
+    /// was still being asked about the computer's certificate or key.
+    @ObservationIgnored private var attemptEndedWhileAsking: (username: String?, password: String, remember: Bool)?
 
     private var credentialPrompt: CredentialPrompt?
     private var hostKeyPrompt: HostKeyPrompt?
@@ -360,6 +366,8 @@ public final class RemoteSession: Identifiable {
         connectTask?.cancel()
         failureMessage = nil
         identityFailure = nil
+        identityWasJustTrusted = false
+        attemptEndedWhileAsking = nil
         didRunConnectActions = false
         pendingCredentials = (username, password, remember)
 
@@ -413,6 +421,9 @@ public final class RemoteSession: Identifiable {
             } catch is CancellationError {
                 return
             } catch VNCError.authenticationFailed(let reason) {
+                if self.connectsAgainAfterTrusting(username: username, password: password, remember: remember) {
+                    return
+                }
                 self.pendingCredentials = nil
                 if let identityFailure = self.identityFailure {
                     // Asking for the password again would not help.
@@ -429,6 +440,9 @@ public final class RemoteSession: Identifiable {
             } catch {
                 if let tunnelError = tunnelFailure.take() {
                     self.tunnelFailed(tunnelError)
+                } else if self.connectsAgainAfterTrusting(
+                    username: username, password: password, remember: remember) {
+                    return
                 } else {
                     self.pendingCredentials = nil
                     // A certificate that was turned down ends the TLS
@@ -544,9 +558,44 @@ public final class RemoteSession: Identifiable {
         guard await decide(challenge, subject: subject) else {
             let presented = subject == .certificate ? "certificate" : "key"
             identityFailure = "The connection was stopped because the computer's \(presented) was not trusted."
+            if attemptEndedWhileAsking != nil {
+                // Nothing is left of the attempt to say so.
+                attemptEndedWhileAsking = nil
+                pendingCredentials = nil
+                failureMessage = identityFailure
+            }
             return .reject
         }
+        if challenge.verdict != .trusted {
+            identityWasJustTrusted = true
+        }
+        if let ended = attemptEndedWhileAsking {
+            // The server had stopped waiting before the answer came. The
+            // answer is on record, so this attempt has nothing to ask.
+            connect(username: ended.username, password: ended.password, remember: ended.remember)
+        }
         return .acceptAndStore
+    }
+
+    /// Keeps an attempt that failed over the time a fingerprint takes to
+    /// check from being reported as a failure.
+    ///
+    /// A server only waits so long for a sign-in to go on (x11vnc gives a
+    /// TLS handshake twenty seconds) and checking a fingerprint against
+    /// the one on the other computer can take longer. If the user has
+    /// agreed by now, the answer is on record and the attempt is made
+    /// again, with nothing left to ask. If they are still looking, it is
+    /// made again when they agree. Either way it is made once: an attempt
+    /// that asked nothing and failed has failed for a reason of its own.
+    private func connectsAgainAfterTrusting(username: String?, password: String, remember: Bool) -> Bool {
+        guard !hasEnded else { return false }
+        if let hostKeyPrompt, hostKeyPrompt.subject != .sshServer {
+            attemptEndedWhileAsking = (username, password, remember)
+            return true
+        }
+        guard identityWasJustTrusted else { return false }
+        connect(username: username, password: password, remember: remember)
+        return true
     }
 
     /// Asks the user about a host key that is not simply the one on record.
