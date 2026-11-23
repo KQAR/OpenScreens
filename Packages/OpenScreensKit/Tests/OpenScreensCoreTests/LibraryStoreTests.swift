@@ -649,8 +649,10 @@ struct LibraryStoreTests {
         store.add(Computer(name: "Studio", host: "studio.local"))
         #expect(!FileManager.default.fileExists(atPath: file.path))
 
-        // Nothing asks for a save here; the store writes on its own.
-        let deadline = ContinuousClock.now + .seconds(10)
+        // Nothing asks for a save here; the store writes on its own. It
+        // does so a moment later, which on a machine running every other
+        // test at once has been more than ten seconds.
+        let deadline = ContinuousClock.now + .seconds(60)
         while !FileManager.default.fileExists(atPath: file.path), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
