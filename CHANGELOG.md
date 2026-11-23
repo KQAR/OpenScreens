@@ -12,8 +12,9 @@ with a Raspberry Pi?
 - **Raspberry Pi OS works as it comes.** Its VNC server asks for your user
   name and password over RSA-AES or TLS, and OpenScreens could do neither,
   so a Pi with VNC simply turned on could not be connected to. The same
-  goes for **RealVNC servers**, which speak RSA-AES by default, and for
-  TigerVNC and x11vnc set up with TLS.
+  goes for TigerVNC and x11vnc set up with TLS. RSA-AES is also what
+  **RealVNC servers** speak by default; it is implemented here the way
+  TigerVNC and wayvnc implement it, and has yet to meet a RealVNC server.
 - **A computer that encrypts its own connections is asked about once.** Its
   certificate, or its key, is one nobody has signed, so the first connection
   shows a fingerprint to check, as SSH does. After that OpenScreens stops,
