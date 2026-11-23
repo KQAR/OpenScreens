@@ -37,8 +37,8 @@ to the same Macs. What OpenScreens adds:
   SSH.
 - **A library.** Groups, tags, previews and search, the same on every
   device through iCloud.
-- **The source.** MIT licensed, with nothing to pay for and nothing sent
-  anywhere.
+- **The source.** MIT licensed. No account to make, nothing to pay for and
+  no analytics.
 
 ## What it does
 
