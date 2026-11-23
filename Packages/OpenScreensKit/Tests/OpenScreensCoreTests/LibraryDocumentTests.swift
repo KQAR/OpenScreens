@@ -948,7 +948,9 @@ struct ComputerTests {
             let settings = ConnectionSettings.defaults(for: kind)
             #expect(!kind.isApple)
             #expect(settings.quality == .standard)
-            #expect(settings.resolution == .remote)
+            // Asked to fit, like a Mac's: a server that can resize its
+            // desktop does, and any other leaves it as it is.
+            #expect(settings.resolution == .matchWindow)
             #expect(settings.remoteAudio == false)
         }
         #expect(ComputerKind.mac.isApple)

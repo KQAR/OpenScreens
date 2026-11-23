@@ -58,6 +58,19 @@ struct ConnectionSettingsForm: View {
                         }
                     }
                 }
+            } else {
+                Picker("Desktop Size", selection: $settings.resolution) {
+                    ForEach(ResolutionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+
+                if settings.resolution == .matchWindow {
+                    Toggle(isOn: $settings.moreSpace) {
+                        Text("More Space on Small Screens")
+                        Text("A wider desktop on a phone. What is on it is smaller.")
+                    }
+                }
             }
 
             Picker("Scaling", selection: $settings.scaling) {
@@ -81,11 +94,15 @@ struct ConnectionSettingsForm: View {
         } header: {
             Text("Picture")
         } footer: {
-            Text(settings.quality.summary)
+            if kind.isApple {
+                Text(settings.quality.summary)
+            } else {
+                Text("\(settings.quality.summary) Fit This Display works with a server that has a desktop of its own to resize, such as TigerVNC. A server that shares a real screen keeps that screen's size.")
+            }
         }
         .onChange(of: settings.quality) { _, quality in
             // Keep dependent options valid for the chosen mode.
-            if quality != .highPerformance {
+            if kind.isApple, quality != .highPerformance {
                 settings.resolution = .remote
                 if settings.displays == .twoVirtual {
                     settings.displays = .single

@@ -78,6 +78,24 @@ struct DisplayMenuItems: View {
                         set: { on in session.update { $0.moreSpace = on } }))
                 }
             }
+        } else {
+            // A VNC server is asked for another size as it runs, where it
+            // lets a client choose.
+            Picker("Desktop Size", selection: Binding(
+                get: { session.settings.resolution },
+                set: { mode in session.update { $0.resolution = mode } })
+            ) {
+                ForEach(ResolutionMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+
+            if session.settings.resolution == .matchWindow {
+                Toggle("More Space", systemImage: "arrow.up.left.and.arrow.down.right", isOn: Binding(
+                    get: { session.settings.moreSpace },
+                    set: { on in session.update { $0.moreSpace = on } }))
+            }
         }
     }
 }

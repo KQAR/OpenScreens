@@ -172,12 +172,13 @@ public struct ConnectionSettings: Codable, Hashable, Sendable {
     }
 
     /// Sensible starting settings for a kind of computer. Only Macs can use
-    /// High Performance, so everything else starts in Standard.
+    /// High Performance, so everything else starts in Standard. The desktop
+    /// is asked to fit either way: a VNC server that can resize its desktop
+    /// does, and one that shares a real screen leaves it as it is.
     public static func defaults(for kind: ComputerKind) -> ConnectionSettings {
         var settings = ConnectionSettings()
         if !kind.isApple {
             settings.quality = .standard
-            settings.resolution = .remote
             settings.remoteAudio = false
         }
         return settings

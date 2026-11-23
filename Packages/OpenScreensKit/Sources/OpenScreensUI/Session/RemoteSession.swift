@@ -147,6 +147,9 @@ public final class RemoteSession: Identifiable {
     @ObservationIgnored private var desktopSizeCheck: Task<Void, Never>?
     /// What the check under way, or the last one, was about.
     @ObservationIgnored private var checkedDesktopRequest: DesktopRequest?
+    /// The size a VNC server's desktop had when this session first reached
+    /// it, to put it back to when the user stops fitting it to the view.
+    @ObservationIgnored private var desktopSizeAtConnect: CGSize?
 
     private struct DesktopRequest: Equatable {
         var room: CGSize
@@ -750,6 +753,9 @@ public final class RemoteSession: Identifiable {
 
     private func didConnect() {
         connectedAt = .now
+        if desktopSizeAtConnect == nil, remoteSize.width > 0 {
+            desktopSizeAtConnect = remoteSize
+        }
         if let pending = pendingCredentials {
             pendingCredentials = nil
             if pending.username != computer.username {
@@ -807,8 +813,11 @@ public final class RemoteSession: Identifiable {
         engine.videoBandRenderer.setBrightnessGain(newSettings.brightnessBoost)
         engine.secondaryVideoBandRenderer.setBrightnessGain(newSettings.brightnessBoost)
 
+        // A Mac makes its client-sized display as part of the handshake. A
+        // VNC server is simply asked for another size.
+        let resizesInPlace = !computer.kind.isApple
         let needsReconnect = newSettings.quality != old.quality
-            || newSettings.resolution != old.resolution
+            || (newSettings.resolution != old.resolution && !resizesInPlace)
             || newSettings.displays != old.displays
             || newSettings.colorDepth != old.colorDepth
             || newSettings.cursor != old.cursor
@@ -827,6 +836,14 @@ public final class RemoteSession: Identifiable {
             if newSettings.moreSpace != old.moreSpace {
                 // The same connection, with a desktop of another size.
                 requestDisplaySize()
+            }
+            if resizesInPlace, newSettings.resolution != old.resolution {
+                if newSettings.resolution == .matchWindow {
+                    requestDisplaySize()
+                } else if let size = desktopSizeAtConnect {
+                    // Back to what the desktop was before it was fitted.
+                    engine.requestStandardDesktopSize(size)
+                }
             }
         }
     }
@@ -877,6 +894,17 @@ public final class RemoteSession: Identifiable {
         let room = settings.displays.room(forOneDisplayIn: lastViewSize)
         engine.updateRemoteDisplaySize(viewSize: room, displayScale: lastDisplayScale)
         checkDesktopSize(for: room, minimum: minimum)
+        requestStandardDesktopSize()
+    }
+
+    /// Asks a VNC server that is not a Mac for a desktop that fits the view.
+    /// The engine sends the request only to a server that has said it lets
+    /// a client resize its desktop, and never to a Mac.
+    private func requestStandardDesktopSize() {
+        guard !computer.kind.isApple, settings.resolution == .matchWindow,
+              let size = StandardDesktop.size(
+                fitting: lastViewSize, minimum: settings.minimumDesktopSize) else { return }
+        engine.requestStandardDesktopSize(size)
     }
 
     /// Finds out whether the Mac made the desktop it was asked for.
