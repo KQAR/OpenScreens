@@ -115,6 +115,15 @@ to the same Macs. What OpenScreens adds:
 - Live statistics: mode, size, frame rate, bitrate, loss, and how the
   connection is protected.
 
+**Keeping up to date**
+
+- **The Mac app updates itself.** A new version is announced above the
+  library, with what is in it. One click downloads it, checks it against the
+  project's signing key, installs it and opens the app again. If a session
+  is open by then, you are asked before the app closes.
+- **What is new, after an update.** On Mac, iPhone and iPad the first launch
+  after an update says what changed.
+
 ## Screenshots
 
 <p align="center">
@@ -129,6 +138,15 @@ to the same Macs. What OpenScreens adds:
 
 <sub>The computers are invented and the desktops are drawn by the demo server
 that comes with the project, so nobody's real screen is on show.</sub>
+
+<p align="center">
+  <img src="docs/images/mac-update-notice.png" width="49%" alt="A new version of the Mac app, announced above the library">
+  <img src="docs/images/mac-update.png" width="49%" alt="What is in the new version, with the button that downloads and installs it">
+</p>
+
+<sub>An update as the Mac app shows it. Taken on a build made under an older
+version number, which is how updating was tried before any released version
+could do it.</sub>
 
 <p align="center">
   <img src="docs/images/icon-appearances.png" width="620" alt="The app icon in its light, dark, tinted and clear appearances">
