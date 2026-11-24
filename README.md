@@ -7,18 +7,33 @@
 **Remote desktop for Mac, iPhone and iPad. Free and open source.**
 
 Control a Mac the way Apple's own Screen Sharing does — High Performance mode,
-sound and a desktop that resizes to fit included — or any computer that speaks
-VNC.
+sound and a desktop that resizes to fit included — and Linux, Windows and
+Raspberry Pi computers through VNC.
 
 [![CI](https://github.com/burakgon/OpenScreens/actions/workflows/ci.yml/badge.svg)](https://github.com/burakgon/OpenScreens/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/burakgon/OpenScreens?label=download)](https://github.com/burakgon/OpenScreens/releases/latest)
-![Platforms](https://img.shields.io/badge/macOS%2026%20%C2%B7%20iOS%2026%20%C2%B7%20iPadOS%2026-black)
+![Runs on](https://img.shields.io/badge/runs%20on-macOS%2026%20%C2%B7%20iOS%2026%20%C2%B7%20iPadOS%2026-black)
+![Controls](https://img.shields.io/badge/controls-Mac%20%C2%B7%20Linux%20%C2%B7%20Windows%20%C2%B7%20Raspberry%20Pi-2ea043)
 ![Swift](https://img.shields.io/badge/Swift-6-orange)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <img src="docs/images/hero.png" alt="OpenScreens on Mac and iPhone" width="900">
 
 </div>
+
+## What it controls
+
+| Computer | What OpenScreens speaks to it |
+|---|---|
+| **Mac** | Apple's Screen Sharing, the way Apple's own app does: High Performance mode with sound, Standard and Full Quality. |
+| **Linux** | VNC. TigerVNC, x11vnc and wayvnc each run for real in the [lab](scripts/compat-lab) that comes with the project, and sessions are tested against all three. |
+| **Raspberry Pi** | VNC as Raspberry Pi OS turns it on, signed in with your user name and password on the Pi. Tried against the same server set up the same way, and not yet on a Pi itself. |
+| **Windows** | VNC, through a server installed there: TightVNC, UltraVNC or RealVNC Server. Not tried against those yet. RDP is not spoken: [say if you want it](https://github.com/burakgon/OpenScreens/issues/2). |
+
+The app itself runs on Mac, iPhone and iPad.
+[Setting each of these up](#windows-linux-and-raspberry-pi) is a few lines,
+further down. A session with any of them can go through an SSH tunnel or
+Tailscale.
 
 ## Why not the Screen Sharing app that comes with a Mac?
 
