@@ -1,16 +1,42 @@
 import OpenScreensCore
 import SwiftUI
 
-// What the user sees of an update: a notice beside the library while one is
+// What the user sees of an update: a notice above the library while one is
 // waiting, a sheet with what is in it and what to do about it, and after it
 // has been installed, what changed.
 
 extension View {
-    /// Shows this window's share of updates: the notice that one is waiting
-    /// and the sheet for it, where the app can update itself, and what is
-    /// new after an update everywhere.
+    /// Shows this window's share of updates: the sheet for one that is
+    /// waiting, where the app can update itself, and what is new after an
+    /// update everywhere. The notice that one is waiting is
+    /// ``updateBanner()``, which goes on the library itself.
     public func updateNotices() -> some View {
         modifier(UpdateNotices())
+    }
+
+    /// Puts the notice that an update is waiting above this view, where the
+    /// app can update itself.
+    ///
+    /// It belongs on what is beside the sidebar. Laid over the whole window
+    /// it covers the sidebar's first rows, which do not move out of its way
+    /// as the library does.
+    func updateBanner() -> some View {
+        modifier(UpdateBannerInset())
+    }
+}
+
+private struct UpdateBannerInset: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            UpdateBanner()
+                .animation(.snappy, value: model.updates.phase.release?.version)
+        }
+        #else
+        content
+        #endif
     }
 }
 
@@ -21,10 +47,6 @@ private struct UpdateNotices: ViewModifier {
         @Bindable var updates = model.updates
         content
             #if os(macOS)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                UpdateBanner()
-                    .animation(.snappy, value: updates.phase.release?.version)
-            }
             .sheet(isPresented: $updates.isShowingDetails) {
                 UpdateSheet()
                     .environment(model)

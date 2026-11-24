@@ -41,6 +41,7 @@ public struct LibraryView: View {
                 .navigationSplitViewColumnWidth(min: 190, ideal: 224, max: 320)
         } detail: {
             content
+                .updateBanner()
                 .navigationTitle(activeFilter.title(in: model.library))
                 .toolbar { toolbar }
         }

@@ -101,6 +101,43 @@ struct LibraryLayoutTests {
         #expect(frame.minY >= host.bounds.minY - 1, "the split view starts above the window: \(frame)")
         #expect(frame.maxY <= host.bounds.maxY + 1, "the split view ends below the window: \(frame)")
     }
+
+    /// The notice that an update is waiting lies above the library, beside
+    /// the sidebar. Laid across the whole window it covered the sidebar's
+    /// first rows, All Computers among them: the sidebar does not move down
+    /// for it as the library does.
+    @Test func theUpdateNoticeKeepsOffTheSidebar() async throws {
+        let model = try makeModel()
+        model.library.add(Computer(
+            name: "Studio", host: "studio.local", settings: .defaults(for: .mac)))
+
+        // Nothing in the window is shaped like the notice while there is
+        // nothing to say, so what is found below is the notice.
+        do {
+            let (window, host, _) = try await makeWindow(for: model, showing: .all)
+            defer { window.close() }
+            #expect(host.viewsShapedLikeANotice().isEmpty)
+        }
+
+        // Found while a session is open, which is when the notice is all
+        // there is to see of an update: the sheet waits to be asked for.
+        model.updates.isBusy = { true }
+        model.updates.engineMoved(
+            to: .available(.init(version: "9.0.0", build: "900"), isDownloaded: false),
+            userInitiated: false)
+        let (window, host, split) = try await makeWindow(for: model, showing: .all)
+        defer { window.close() }
+
+        let sidebar = try #require(split.arrangedSubviews.first)
+        let sidebarFrame = sidebar.convert(sidebar.bounds, to: nil)
+        let notice = try #require(
+            host.viewsShapedLikeANotice().first, "the notice is not in the library")
+        let frame = notice.convert(notice.bounds, to: nil)
+        #expect(
+            frame.minX >= sidebarFrame.maxX - 1,
+            "the notice \(frame) lies over the sidebar \(sidebarFrame)")
+        #expect(frame.maxX <= host.bounds.maxX + 1, "the notice \(frame) runs out of the window")
+    }
 }
 
 private extension NSView {
@@ -110,6 +147,24 @@ private extension NSView {
             if let match = subview.firstDescendant(type) { return match }
         }
         return nil
+    }
+
+    /// The views a notice on glass is drawn in: SwiftUI gives glass a view
+    /// of its own, and the notice is a strip of it, wide and one or two
+    /// lines high. A window that is not on screen tells assistive software
+    /// nothing, so the notice cannot be found the way that software would.
+    func viewsShapedLikeANotice() -> [NSView] {
+        var found: [NSView] = []
+        func look(in view: NSView) {
+            let frame = view.convert(view.bounds, to: nil)
+            if String(describing: type(of: view)).contains("GraphicsView"),
+               (40...90).contains(frame.height), frame.width > 200 {
+                found.append(view)
+            }
+            for subview in view.subviews { look(in: subview) }
+        }
+        look(in: self)
+        return found
     }
 }
 #endif
