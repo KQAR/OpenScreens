@@ -326,6 +326,27 @@ and with **Thousands of Colours** sends about half as much.
 beta opens it can be [built from source](#building-from-source), which
 needs a Mac with Xcode and nothing else.
 
+**I have an older version. How do I update?** From 1.3.0 on the Mac app
+does it itself: a new version is announced at the top of the library, and
+one click installs it. Versions 1.2.0 and earlier do not look for updates,
+so from one of them it is done by hand, once: download the
+[latest release](https://github.com/burakgon/OpenScreens/releases/latest)
+and drag it over the copy in Applications. Your library and your saved
+passwords are not kept in the app, and stay where they are.
+
+**There are many remote desktop apps. Why trust this one?** You do not
+have to take it on trust. The source is all here, under the MIT licence,
+and the Mac app is built from it, signed and notarised. There is no account
+and no server of this project's: a session goes from your device to your
+computer with nothing of ours in between. Besides the computers you connect
+to, the app talks to iCloud, to keep your library the same on your devices;
+to GitHub, for updates to the Mac app; and to Tailscale's API, if you give
+it a key for that. Each can be turned off. Passwords stay in your keychain.
+[How a session is protected](#how-a-session-is-protected) says what is
+encrypted and what is not, [the security policy](SECURITY.md) says what an
+update has to pass, and since 1.2.0 the notes of a release say what was
+tried and what was not.
+
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome — see
