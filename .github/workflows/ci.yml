@@ -22,8 +22,13 @@ jobs:
       - uses: actions/checkout@v5
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_27.2.app
+      # One test at a time. Started all at once, the tests that keep time
+      # fail on a runner that is short of it: on 2026-11-24 every SFTP test
+      # took twenty seconds here where it takes one or two on its own, and
+      # two whose server answers on a schedule ran out of theirs. Taken one
+      # at a time the whole run is about a minute on a developer's Mac.
       - name: Package tests
-        run: swift test --package-path Packages/OpenScreensKit
+        run: swift test --package-path Packages/OpenScreensKit --no-parallel
       - name: Engine tests
         run: >
           swift test --package-path Vendor/rootshell-vnc
