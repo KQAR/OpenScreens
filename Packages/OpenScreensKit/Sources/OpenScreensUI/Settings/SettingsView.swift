@@ -373,7 +373,7 @@ struct PrivacySettingsPane: View {
                 Toggle("Require \(BiometricGate.methodName) to Open", isOn: $settings.requiresAuthentication)
                 Toggle("Remember What Each Screen Looked Like", isOn: $settings.savesSessionPreviews)
                 Button("Clear Saved Previews") {
-                    PreviewStore.shared.removeAll()
+                    model.previews.removeAll()
                 }
             } header: {
                 Text("Privacy")

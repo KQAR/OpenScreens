@@ -116,6 +116,7 @@ public final class RemoteSession: Identifiable {
     @ObservationIgnored private let sshKeys: SSHKeyStore
     @ObservationIgnored private let knownHosts: KnownHostsStore
     @ObservationIgnored private let trustedServers: KnownHostsStore
+    @ObservationIgnored private let previews: PreviewStore
     /// Why an attempt ended, when it ended over the computer's certificate
     /// or key and not over a password.
     @ObservationIgnored private var identityFailure: String?
@@ -187,7 +188,8 @@ public final class RemoteSession: Identifiable {
         settings: AppSettings,
         sshKeys: SSHKeyStore = SSHKeyStore(storage: InMemorySecretStorage()),
         knownHosts: KnownHostsStore = KnownHostsStore(fileURL: nil),
-        trustedServers: KnownHostsStore = .screenSharingServers(fileURL: nil)
+        trustedServers: KnownHostsStore = .screenSharingServers(fileURL: nil),
+        previews: PreviewStore = PreviewStore(directory: nil)
     ) {
         self.computer = computer
         self.isSaved = isSaved
@@ -198,6 +200,7 @@ public final class RemoteSession: Identifiable {
         self.sshKeys = sshKeys
         self.knownHosts = knownHosts
         self.trustedServers = trustedServers
+        self.previews = previews
         self.requestedQuality = computer.settings.quality
         let engine = VNCSession(configuration: Self.configuration(for: computer))
         self.engine = engine
@@ -1300,7 +1303,7 @@ public final class RemoteSession: Identifiable {
 
     private func savePreviewIfWanted() {
         guard isSaved, appSettings.savesSessionPreviews, let image = screenshot() else { return }
-        PreviewStore.shared.save(image, for: computer.id)
+        previews.save(image, for: computer.id)
     }
 
     // MARK: - Statistics

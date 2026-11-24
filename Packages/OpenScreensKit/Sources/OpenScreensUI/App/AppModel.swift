@@ -23,6 +23,8 @@ public final class AppModel {
     /// Screen sharing servers trusted by the certificate or the key they
     /// present.
     public let trustedServers: KnownHostsStore
+    /// Last-seen pictures of the computers in the library.
+    public let previews: PreviewStore
     /// The optional lock in front of everything, shared by every window.
     public let lock: AppLock
     /// Where an update to the app stands. The Mac app gives it something to
@@ -72,16 +74,25 @@ public final class AppModel {
         // Keys go in the same keychain as the passwords, under the stricter
         // setting the key store asks for.
         let sshKeys = isIsolated ? SSHKeyStore(storage: secrets) : SSHKeyStore()
+        // A model that was handed its own stores keeps its pictures of
+        // screens off the disk as well. The tests open sessions by the
+        // hundred, on the machines of people who use the app, and a preview
+        // of each has no business among theirs.
+        let previews = isIsolated && !StorageLocation.isIsolated
+            ? PreviewStore(directory: nil)
+            : PreviewStore.shared
         self.library = library
         self.settings = settings
         self.credentials = credentials
         self.sshKeys = sshKeys
         self.knownHosts = knownHosts
         self.trustedServers = trustedServers
+        self.previews = previews
         self.lock = AppLock(startsUnlocked: !settings.requiresAuthentication)
         self.sessions = SessionManager(
             library: library, credentials: credentials, settings: settings,
-            sshKeys: sshKeys, knownHosts: knownHosts, trustedServers: trustedServers)
+            sshKeys: sshKeys, knownHosts: knownHosts, trustedServers: trustedServers,
+            previews: previews)
         self.nearby = NearbyBrowser()
         self.tailscale = TailscaleDirectory(credentials: credentials) { [settings] in
             settings.tailscaleEnabled ? .automatic(tailnet: settings.tailnet) : .off
@@ -240,7 +251,7 @@ public final class AppModel {
     public func delete(_ ids: Set<Computer.ID>) {
         for id in ids {
             credentials.deleteAll(for: id)
-            PreviewStore.shared.remove(for: id)
+            previews.remove(for: id)
             sessions.closeSessions(for: id)
         }
         library.delete(ids)
@@ -266,7 +277,7 @@ public final class AppModel {
         // This also starts the list afresh when it could not be read.
         try? knownHosts.removeAll()
         try? trustedServers.removeAll()
-        PreviewStore.shared.removeAll()
+        previews.removeAll()
         settings.reset()
         if !everywhere {
             settings.syncsWithICloud = false
@@ -296,6 +307,7 @@ public final class SessionManager {
     @ObservationIgnored private let sshKeys: SSHKeyStore
     @ObservationIgnored private let knownHosts: KnownHostsStore
     @ObservationIgnored private let trustedServers: KnownHostsStore
+    @ObservationIgnored private let previews: PreviewStore
 
     init(
         library: LibraryStore,
@@ -303,7 +315,8 @@ public final class SessionManager {
         settings: AppSettings,
         sshKeys: SSHKeyStore,
         knownHosts: KnownHostsStore,
-        trustedServers: KnownHostsStore
+        trustedServers: KnownHostsStore,
+        previews: PreviewStore
     ) {
         self.library = library
         self.credentials = credentials
@@ -311,6 +324,7 @@ public final class SessionManager {
         self.sshKeys = sshKeys
         self.knownHosts = knownHosts
         self.trustedServers = trustedServers
+        self.previews = previews
     }
 
     public func session(_ id: RemoteSession.ID?) -> RemoteSession? {
@@ -350,7 +364,8 @@ public final class SessionManager {
             settings: settings,
             sshKeys: sshKeys,
             knownHosts: knownHosts,
-            trustedServers: trustedServers)
+            trustedServers: trustedServers,
+            previews: previews)
         sessions.append(session)
         return session
     }
@@ -384,7 +399,8 @@ public final class SessionManager {
             settings: settings,
             sshKeys: sshKeys,
             knownHosts: knownHosts,
-            trustedServers: trustedServers)
+            trustedServers: trustedServers,
+            previews: previews)
         if let password = target.password, !password.isEmpty {
             try? credentials.setPassword(password, for: computer.id)
         }

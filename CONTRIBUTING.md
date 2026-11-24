@@ -49,6 +49,13 @@ A change to behaviour comes with a test that fails without it. Where a test
 needs something to connect to, use `RFBTestServer`, which records what a
 client sent.
 
+The tests keep out of the app you use yourself. A model made for a test is
+handed its stores, as `SessionEndToEndTests` does: a library with no file,
+settings of its own and passwords kept in memory. Given those, it keeps
+known hosts and previews in memory too and stays out of iCloud. An
+`AppModel()` made with nothing is the app's own: your library, your
+keychain.
+
 Debug builds can be driven from the environment — open an address, type,
 press keys, write a report of the session — which is how most protocol work
 here was checked against real computers. `DebugAutomation.swift` lists the

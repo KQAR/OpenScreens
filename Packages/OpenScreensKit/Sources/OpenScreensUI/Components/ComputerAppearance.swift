@@ -51,6 +51,8 @@ extension QualityMode {
 /// The picture on a computer's card: its last-seen screen when there is one,
 /// otherwise a soft gradient in the computer's colour with its icon.
 struct ComputerArtwork: View {
+    /// Whose previews to show. Without a model above it, the app's own.
+    @Environment(AppModel.self) private var model: AppModel?
     let computer: Computer
     var showsPreview = true
     /// A more specific symbol than the computer's kind gives, when the
@@ -58,7 +60,8 @@ struct ComputerArtwork: View {
     var symbolName: String?
 
     var body: some View {
-        let preview = showsPreview ? PreviewStore.shared.image(for: computer.id) : nil
+        let previews = model?.previews ?? .shared
+        let preview = showsPreview ? previews.image(for: computer.id) : nil
         ZStack {
             if let preview {
                 Image(decorative: preview, scale: 1)

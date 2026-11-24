@@ -78,6 +78,33 @@ struct SessionEndToEndTests {
         #expect(pixels.isClose(to: (255, 255, 255), atX: 280, y: 170))  // bottom right: white
     }
 
+    /// A session keeps a picture of the screen it showed for the computer's
+    /// card. The model these tests use touches no disk, and that has to go
+    /// for the picture too: these tests are run on machines whose owner uses
+    /// the app, and every session of every run used to leave a file among
+    /// their own previews.
+    @Test func aSessionLeavesItsPreviewWithTheModelAndNotOnDisk() async throws {
+        let (session, server, model) = try await makeSession()
+        defer { server.stop() }
+        session.start()
+        #expect(await waitUntil { session.phase == .connected })
+        #expect(await waitUntil { session.screenshot() != nil })
+        let id = session.computer.id
+        #expect(model.previews.image(for: id) == nil)
+
+        model.sessions.close(session)
+
+        let preview = try #require(model.previews.image(for: id))
+        #expect(preview.width == 320)
+        #expect(preview.height == 200)
+        // Looked for by its path, since asking the app for its folder would
+        // make one.
+        let support = try #require(FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask).first)
+        let onDisk = support.appending(path: "OpenScreens/Previews/\(id.uuidString).jpg")
+        #expect(!FileManager.default.fileExists(atPath: onDisk.path))
+    }
+
     @Test func pointerEventsArriveAtTheSamePixel() async throws {
         let (session, server, model) = try await makeSession()
         defer {

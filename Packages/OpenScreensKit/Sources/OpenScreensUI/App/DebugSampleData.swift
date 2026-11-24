@@ -98,7 +98,7 @@ enum DebugSampleData {
                 }
             }
             if let preview = desktopPreview(palette: sample.palette, kind: sample.kind, dark: sample.darkDesktop) {
-                PreviewStore.shared.save(preview, for: computer.id)
+                model.previews.save(preview, for: computer.id)
             }
         }
         model.library.saveNow()

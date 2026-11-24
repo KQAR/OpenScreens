@@ -11,29 +11,35 @@ import UniformTypeIdentifiers
 /// for recognition, are never synced, and can be turned off entirely.
 @Observable
 public final class PreviewStore {
+    /// The store the app keeps on disk. ``AppModel/previews`` is the one to
+    /// use: a model that keeps nothing on disk has a store of its own.
     public static let shared = PreviewStore()
 
     /// Bumped whenever a preview changes so views showing one reload it.
     public private(set) var revision = 0
 
-    @ObservationIgnored private let directory: URL
+    @ObservationIgnored private let directory: URL?
     @ObservationIgnored private var cache: [UUID: CGImage] = [:]
 
     /// Longest edge of a stored preview, in pixels.
     public static let maximumDimension = 960
 
-    public init(directory: URL = StorageLocation.previewsDirectory) {
+    /// - Parameter directory: Where the previews are kept. With none they
+    ///   are kept in memory and gone with the store, which is what a model
+    ///   that touches no disk wants: a test, or a preview in Xcode.
+    public init(directory: URL? = StorageLocation.previewsDirectory) {
         self.directory = directory
     }
 
-    private func url(for id: UUID) -> URL {
-        directory.appending(path: "\(id.uuidString).jpg")
+    private func url(for id: UUID) -> URL? {
+        directory?.appending(path: "\(id.uuidString).jpg")
     }
 
     public func image(for id: UUID) -> CGImage? {
         _ = revision
         if let cached = cache[id] { return cached }
-        guard let source = CGImageSourceCreateWithURL(url(for: id) as CFURL, nil),
+        guard let url = url(for: id),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         cache[id] = image
         return image
@@ -41,30 +47,38 @@ public final class PreviewStore {
 
     public func save(_ image: CGImage, for id: UUID) {
         guard let scaled = Self.downscaled(image, maximumDimension: Self.maximumDimension) else { return }
-        let destinationURL = url(for: id)
+        if let destinationURL = url(for: id) {
+            guard Self.write(scaled, to: destinationURL) else { return }
+        }
+        cache[id] = scaled
+        revision += 1
+    }
+
+    private static func write(_ image: CGImage, to destinationURL: URL) -> Bool {
         guard let destination = CGImageDestinationCreateWithURL(
-            destinationURL as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { return }
-        CGImageDestinationAddImage(destination, scaled, [
+            destinationURL as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { return false }
+        CGImageDestinationAddImage(destination, image, [
             kCGImageDestinationLossyCompressionQuality: 0.8,
         ] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { return }
+        guard CGImageDestinationFinalize(destination) else { return false }
         // Previews show remote screen contents; keep them out of backups.
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var mutableURL = destinationURL
         try? mutableURL.setResourceValues(values)
-        cache[id] = scaled
-        revision += 1
+        return true
     }
 
     public func remove(for id: UUID) {
-        try? FileManager.default.removeItem(at: url(for: id))
+        if let url = url(for: id) {
+            try? FileManager.default.removeItem(at: url)
+        }
         cache[id] = nil
         revision += 1
     }
 
     public func removeAll() {
-        if let urls = try? FileManager.default.contentsOfDirectory(
+        if let directory, let urls = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil) {
             for url in urls {
                 try? FileManager.default.removeItem(at: url)
