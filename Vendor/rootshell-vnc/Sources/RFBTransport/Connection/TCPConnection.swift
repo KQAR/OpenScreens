@@ -44,6 +44,9 @@ public actor TCPConnection: RFBConnection {
 
     private let host: String
     private let port: UInt16
+    /// A proxy every dial goes through, such as the SOCKS5 server of a
+    /// Tailscale node running inside the app.
+    private let proxy: ProxyConfiguration?
     private let log = VNCLogger(category: "TCPConnection")
     private var channel: Channel?
     private var inboundHandler: InboundByteStreamHandler?
@@ -119,9 +122,9 @@ public actor TCPConnection: RFBConnection {
         }
     }
 
-    public init(host: String, port: UInt16) {
+    public init(host: String, port: UInt16, proxy: ProxyConfiguration? = nil) {
         self.init(
-            host: host, port: port,
+            host: host, port: port, proxy: proxy,
             maxDialAttempts: 3,
             dialRetryBackoffNanos: 1_000_000_000,
             connectTimeoutSeconds: 10)
@@ -130,6 +133,7 @@ public actor TCPConnection: RFBConnection {
     init(
         host: String,
         port: UInt16,
+        proxy: ProxyConfiguration? = nil,
         maxDialAttempts: Int,
         dialRetryBackoffNanos: UInt64,
         connectTimeoutSeconds: Int,
@@ -137,6 +141,7 @@ public actor TCPConnection: RFBConnection {
     ) {
         self.host = host
         self.port = port
+        self.proxy = proxy
         self.maxDialAttempts = max(1, maxDialAttempts)
         self.dialRetryBackoffNanos = dialRetryBackoffNanos
         self.connectTimeoutSeconds = max(1, connectTimeoutSeconds)
@@ -206,8 +211,13 @@ public actor TCPConnection: RFBConnection {
             // a paused renderer also stops draining the kernel socket.
             .channelOption(ChannelOptions.autoRead, value: false)
             .channelOption(NIOTSChannelOptions.allowLocalEndpointReuse, value: true)
-            .configureNWParameters { parameters in
+            .configureNWParameters { [proxy] parameters in
                 parameters.serviceClass = .responsiveData
+                if let proxy {
+                    let context = NWParameters.PrivacyContext(description: "proxied")
+                    context.proxyConfigurations = [proxy]
+                    parameters.setPrivacyContext(context)
+                }
             }
             .channelInitializer { channel in
                 channel.pipeline.addHandler(refusal).flatMap {
