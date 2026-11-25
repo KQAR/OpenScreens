@@ -200,7 +200,15 @@ public final class SSHClient: Sendable {
             throw SSHError.connectionFailed("\(port) is not a valid port number.")
         }
 
-        let timeout = max(TimeAmount(timeout), .seconds(1))
+        // A computer in the tailnet is reached through the app's own node
+        // when it runs. Its host key is still filed under the name given.
+        let route = await EmbeddedTailnet.shared.route(to: host)
+        // Where no direct path can be made, as from behind a mobile
+        // carrier's NAT, the node relays through Tailscale's DERP servers at
+        // up to a few seconds a round trip, and the handshake and sign-in
+        // take several. Fifteen seconds is not enough for them there.
+        let minimum: TimeAmount = route == nil ? .seconds(1) : Self.tailnetMinimumTimeout
+        let timeout = max(TimeAmount(timeout), minimum)
         let configuration = SSHHandshakeHandler.Configuration(
             host: host,
             port: port,
@@ -211,9 +219,6 @@ public final class SSHClient: Sendable {
             timeout: timeout)
         let attempt = SSHConnectionAttempt()
         let log = SSHConnectionLog()
-        // A computer in the tailnet is reached through the app's own node
-        // when it runs. Its host key is still filed under the name given.
-        let route = await EmbeddedTailnet.shared.route(to: host)
 
         return try await withTaskCancellationHandler {
             do {
@@ -270,6 +275,10 @@ public final class SSHClient: Sendable {
         channel.eventLoop.makeFailedFuture(
             SSHError.channelOpenRefused("This client accepts no channels from the server."))
     }
+
+    /// The least time allowed each step of a connection through the app's
+    /// Tailscale node. See ``connect(host:port:username:credential:knownHosts:hostKeyPolicy:timeout:)``.
+    static let tailnetMinimumTimeout: TimeAmount = .seconds(45)
 
     private static func bootstrap(timeout: TimeAmount, proxy: ProxyConfiguration?) -> NIOTSConnectionBootstrap {
         NIOTSConnectionBootstrap(group: eventLoopGroup)
