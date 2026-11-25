@@ -5,12 +5,13 @@ import Observation
 public enum TailscaleMode: Hashable, Sendable {
     /// Tailscale is not used; the directory stays empty.
     case off
-    /// The HTTP API when credentials are saved in the keychain; otherwise, on
-    /// a Mac with Tailscale installed, the Tailscale client; otherwise
-    /// nothing. The mode to use unless the user has chosen one.
+    /// On iPhone and iPad, the app's own Tailscale node when it is signed
+    /// in; otherwise the HTTP API when credentials are saved in the keychain;
+    /// otherwise, on a Mac with Tailscale installed, the Tailscale client;
+    /// otherwise nothing. The mode to use unless the user has chosen one.
     case automatic(tailnet: String = "-")
-    /// The Tailscale client installed on this Mac. Needs no setting up.
-    /// Not available on iPhone and iPad.
+    /// The Tailscale client installed on this Mac. Needs no setting up. On
+    /// iPhone and iPad, the app's own node once it is signed in.
     case local
     /// Tailscale's HTTP API, signed with the credentials saved in the
     /// keychain. `tailnet` is a tailnet ID, or `-` for the credentials' own.
@@ -64,6 +65,8 @@ public final class TailscaleDirectory {
     /// have been looked at.
     enum Configuration: Hashable, Sendable {
         case local
+        /// The node inside the app. See ``EmbeddedTailnet``.
+        case embedded
         case api(tailnet: String, credentials: TailscaleCredentials)
     }
 
@@ -275,7 +278,8 @@ public final class TailscaleDirectory {
             #if os(macOS)
             return .local
             #else
-            return nil
+            // The Tailscale client on an iPhone or iPad is the app's own.
+            return await EmbeddedTailnet.shared.hasSavedLogin ? .embedded : nil
             #endif
 
         case .api(let tailnet):
@@ -284,6 +288,11 @@ public final class TailscaleDirectory {
             }
 
         case .automatic(let tailnet):
+            #if !os(macOS)
+            if await EmbeddedTailnet.shared.hasSavedLogin {
+                return .embedded
+            }
+            #endif
             if let saved = TailscaleCredentials.saved(in: credentials) {
                 return .api(tailnet: tailnet, credentials: saved)
             }
@@ -323,6 +332,8 @@ public final class TailscaleDirectory {
                 // where there is no Tailscale client to ask.
                 return UnavailableSource()
                 #endif
+            case .embedded:
+                return EmbeddedTailnetSource()
             }
         }
     }

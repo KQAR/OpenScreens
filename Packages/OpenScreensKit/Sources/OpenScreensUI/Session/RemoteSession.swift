@@ -275,6 +275,10 @@ public final class RemoteSession: Identifiable {
             // Its picture travels over UDP, which a tunnel does not carry.
             return "High Performance is not available through an SSH tunnel."
         }
+        if engine.configuration.transportProvider != nil, requestedQuality == .highPerformance {
+            // The node's proxy carries TCP; the picture needs UDP.
+            return "High Performance is not available through Tailscale in OpenScreens. Its picture travels over UDP, and the app's own Tailscale connection only carries TCP for now."
+        }
         return engine.highPerformanceFallbackReason
     }
 
@@ -393,6 +397,8 @@ public final class RemoteSession: Identifiable {
                 failureMessage = "The SSH key chosen for this computer could not be read from the keychain. \(reason)"
                 return
             }
+        } else if EmbeddedTailnet.shared.reaches(computer.host) {
+            configuration.transportProvider = Self.tailnetProvider
         }
 
         isStarting = true
@@ -502,6 +508,16 @@ public final class RemoteSession: Identifiable {
             }
             return .ready(username: username, credential: .password(password))
         }
+    }
+
+    /// Reaches a computer in the tailnet through the app's own Tailscale
+    /// node. Asked again for every dial, so a node that had to start over
+    /// after the app was suspended is picked up.
+    private static let tailnetProvider: VNCTransportProvider = { host, port in
+        guard let route = await EmbeddedTailnet.shared.route(to: host) else {
+            throw VNCProtocolError.ioError("Tailscale in OpenScreens is not connected.")
+        }
+        return TCPConnection(host: route.host, port: port, proxy: route.proxy)
     }
 
     private func tunnelProvider(

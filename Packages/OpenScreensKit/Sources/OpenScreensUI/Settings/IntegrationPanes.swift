@@ -1,3 +1,4 @@
+import AuthenticationServices
 import OpenScreensCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -39,6 +40,10 @@ struct TailscaleSettingsPane: View {
                 }
             } footer: {
                 Text(overview)
+            }
+
+            if EmbeddedTailnet.isSupported {
+                EmbeddedTailnetSection()
             }
 
             if settings.tailscaleEnabled {
@@ -110,7 +115,7 @@ struct TailscaleSettingsPane: View {
         #if os(macOS)
         "Lists the computers in your tailnet in the library. With the Tailscale app running on this Mac, that works without any setup; an access token works everywhere."
         #else
-        "Lists the computers in your tailnet in the library, so they are one tap away from anywhere. Needs an access token or OAuth client."
+        "Lists the computers in your tailnet in the library, so they are one tap away from anywhere. Sign in to Tailscale below, or use an access token or OAuth client."
         #endif
     }
 
@@ -169,6 +174,84 @@ struct TailscaleSettingsPane: View {
         }
         refreshSavedState()
         Task { await model.tailscale.refresh() }
+    }
+}
+
+/// Signing the app's own Tailscale node in and out.
+private struct EmbeddedTailnetSection: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+    @State private var isSigningIn = false
+
+    private var tailnet: EmbeddedTailnet { .shared }
+
+    /// Where to sign in while a sign-in this pane started is waiting for it.
+    private var loginURL: URL? {
+        guard isSigningIn, case .needsLogin(let url) = tailnet.state else { return nil }
+        return url
+    }
+
+    var body: some View {
+        Section {
+            LabeledContent("Status") {
+                Text(status)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+            switch tailnet.state {
+            case .signedOut, .failed:
+                Button("Sign In to Tailscale") {
+                    isSigningIn = true
+                    tailnet.signIn()
+                }
+            case .starting, .needsLogin:
+                Button("Cancel Sign-In", role: .destructive) {
+                    isSigningIn = false
+                    Task { await tailnet.signOut() }
+                }
+            case .running:
+                Button("Sign Out", role: .destructive) {
+                    Task {
+                        await tailnet.signOut()
+                        await model.tailscale.refresh()
+                    }
+                }
+            }
+        } header: {
+            Text("Tailscale in OpenScreens")
+        } footer: {
+            Text("Connects to the computers in your tailnet without the Tailscale app or its VPN. OpenScreens joins your tailnet as a device of its own. High Performance screen sharing is not available through it, because its picture travels over UDP and this connection carries TCP only.")
+        }
+        // A change of address, or the sign-in finishing, ends the page that
+        // was open for the previous one.
+        .task(id: loginURL) {
+            guard let loginURL else { return }
+            do {
+                _ = try await webAuthenticationSession.authenticate(
+                    using: loginURL, callback: .customScheme("openscreens-tailscale"),
+                    preferredBrowserSession: .shared, additionalHeaderFields: [:])
+            } catch {
+                // Closed by the user before signing in: give up the attempt.
+                guard !Task.isCancelled, !tailnet.isRunning else { return }
+                isSigningIn = false
+                await tailnet.signOut()
+            }
+        }
+        .onChange(of: tailnet.isRunning) { _, isRunning in
+            guard isRunning else { return }
+            isSigningIn = false
+            Task { await model.tailscale.refresh() }
+        }
+    }
+
+    private var status: String {
+        switch tailnet.state {
+        case .signedOut: "Signed out"
+        case .starting: "Connecting…"
+        case .needsLogin: "Waiting for sign-in…"
+        case .running(let name): name.isEmpty ? "Connected" : "Connected to \(name)"
+        case .failed(let message): message
+        }
     }
 }
 
