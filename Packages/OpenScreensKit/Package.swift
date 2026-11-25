@@ -41,8 +41,18 @@ let package = Package(
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOTransportServices", package: "swift-nio-transport-services"),
+                .target(name: "TailscaleKit", condition: .when(platforms: [.iOS])),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
+        // Tailscale's own node, run inside the iPhone and iPad app so it can
+        // reach the computers in a tailnet without the Tailscale app.
+        // Built from tailscale/libtailscale by scripts/build-tailscalekit.sh.
+        .binaryTarget(
+            name: "TailscaleKit",
+            url: "https://github.com/KQAR/OpenScreens/releases/download/tailscalekit-dacde75/TailscaleKit.xcframework.zip",
+            checksum: "a75cd2ef57b9848914f8e951628070d4fc3465938f41d4c2639d1e4bc9f708e2"
         ),
 
         // SwiftUI interface, session controller and the platform remote canvases.

@@ -211,11 +211,14 @@ public final class SSHClient: Sendable {
             timeout: timeout)
         let attempt = SSHConnectionAttempt()
         let log = SSHConnectionLog()
+        // A computer in the tailnet is reached through the app's own node
+        // when it runs. Its host key is still filed under the name given.
+        let route = await EmbeddedTailnet.shared.route(to: host)
 
         return try await withTaskCancellationHandler {
             do {
-                let (channel, authentication, gate) = try await bootstrap(timeout: timeout)
-                    .connect(host: host, port: port) { channel in
+                let (channel, authentication, gate) = try await bootstrap(timeout: timeout, proxy: route?.proxy)
+                    .connect(host: route?.host ?? host, port: port) { channel in
                         channel.eventLoop.makeCompletedFuture {
                             try attempt.adopt(channel)
                             let handshake = SSHHandshakeHandler(
@@ -268,13 +271,20 @@ public final class SSHClient: Sendable {
             SSHError.channelOpenRefused("This client accepts no channels from the server."))
     }
 
-    private static func bootstrap(timeout: TimeAmount) -> NIOTSConnectionBootstrap {
+    private static func bootstrap(timeout: TimeAmount, proxy: ProxyConfiguration?) -> NIOTSConnectionBootstrap {
         NIOTSConnectionBootstrap(group: eventLoopGroup)
             .connectTimeout(timeout)
             .withQoS(.userInitiated)
             .tcpOptions(tcpOptions(timeout: timeout))
             .channelOption(NIOTSChannelOptions.maximumReceiveLength, value: maximumReceiveLength)
-            .configureNWParameters { $0.serviceClass = .responsiveData }
+            .configureNWParameters { parameters in
+                parameters.serviceClass = .responsiveData
+                if let proxy {
+                    let context = NWParameters.PrivacyContext(description: "tailnet")
+                    context.proxyConfigurations = [proxy]
+                    parameters.setPrivacyContext(context)
+                }
+            }
     }
 
     /// How the connection's TCP is set up.

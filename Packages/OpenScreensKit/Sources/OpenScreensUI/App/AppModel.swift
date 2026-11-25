@@ -166,6 +166,7 @@ public final class AppModel {
     /// Starts what the app does while it is in use: looking for computers
     /// and catching up with iCloud. Safe to call again.
     public func becomeActive() {
+        Task { await EmbeddedTailnet.shared.resume() }
         applyDiscoverySettings()
         sync.syncNow()
     }

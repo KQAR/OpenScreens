@@ -16,12 +16,15 @@ struct TailscaleLocalStatus: Decodable {
     /// Every other device, keyed by its public key.
     var peers: [String: TailscaleDevice.Lenient<Node>]?
     var currentTailnet: Tailnet?
+    /// Where to sign in, while the node is waiting for someone to.
+    var authURL: String?
 
     private enum CodingKeys: String, CodingKey {
         case backendState = "BackendState"
         case thisDevice = "Self"
         case peers = "Peer"
         case currentTailnet = "CurrentTailnet"
+        case authURL = "AuthURL"
     }
 
     struct Node: Decodable {
@@ -79,9 +82,11 @@ struct TailscaleLocalStatus: Decodable {
     }
 
     struct Tailnet: Decodable {
+        var name: String?
         var magicDNSEnabled: Bool?
 
         private enum CodingKeys: String, CodingKey {
+            case name = "Name"
             case magicDNSEnabled = "MagicDNSEnabled"
         }
     }
