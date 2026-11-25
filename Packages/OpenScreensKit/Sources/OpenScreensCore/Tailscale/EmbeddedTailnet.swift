@@ -40,8 +40,13 @@ public final class EmbeddedTailnet {
         case signedOut
         /// The node is starting, from a saved login or to ask for one.
         case starting
-        /// The node is waiting for someone to sign in at this address.
-        case needsLogin(URL)
+        /// The node is waiting for someone to sign in: for the first time, or
+        /// again once its key has expired. The address to do it at, once
+        /// Tailscale has handed one out; ``signIn()`` asks for one.
+        case needsLogin(URL?)
+        /// Signed in, waiting for an admin of the tailnet to approve the
+        /// device. Moves on to ``running(tailnet:)`` by itself.
+        case awaitingApproval
         /// Signed in to the named tailnet and connected.
         case running(tailnet: String)
         case failed(String)
@@ -68,6 +73,16 @@ public final class EmbeddedTailnet {
         FileManager.default.fileExists(atPath: Self.stateFile.path)
     }
 
+    /// Whether the saved login has ever got as far as running, which tells
+    /// an expired key from a first sign-in that was never finished.
+    public var hasBeenSignedIn: Bool {
+        FileManager.default.fileExists(atPath: Self.signedInMarker.path)
+    }
+
+    private nonisolated static var signedInMarker: URL {
+        directory.appending(path: "signed-in")
+    }
+
     nonisolated static var directory: URL {
         StorageLocation.baseDirectory.appending(path: "Tailscale", directoryHint: .isDirectory)
     }
@@ -90,12 +105,18 @@ public final class EmbeddedTailnet {
 
     // MARK: - Signing in and out
 
-    /// Starts the node, which asks for a login when none is saved. Watch
+    /// Starts the node, which asks for a login when none is saved, or asks a
+    /// running node that needs one for a new sign-in address. Watch
     /// ``state`` for the address to sign in at.
-    public func signIn() {
+    public func signIn() async {
         #if canImport(TailscaleKit)
-        guard node == nil else { return }
-        start()
+        guard node != nil else {
+            start()
+            return
+        }
+        if let loopback = await liveLoopback() {
+            await Self.localAPI("login-interactive", loopback: loopback)
+        }
         #endif
     }
 
@@ -212,12 +233,15 @@ public final class EmbeddedTailnet {
         switch status.backendState {
         case "Running":
             state = .running(tailnet: status.currentTailnet?.name ?? "")
-        case "NeedsLogin":
-            if let url = status.authURL.flatMap(URL.init(string:)) {
-                state = .needsLogin(url)
+            if !hasBeenSignedIn {
+                FileManager.default.createFile(atPath: Self.signedInMarker.path, contents: nil)
             }
+        case "NeedsLogin":
+            // An expired key also lands here, without an address until one
+            // is asked for.
+            state = .needsLogin(status.authURL.flatMap { $0.isEmpty ? nil : URL(string: $0) })
         case "NeedsMachineAuth":
-            state = .failed(TailscaleError.awaitingApproval.errorDescription ?? "")
+            state = .awaitingApproval
         default:
             break
         }
@@ -252,7 +276,12 @@ public final class EmbeddedTailnet {
     private func watch() async {
         while !Task.isCancelled {
             _ = try? await readStatus()
-            let pause: Duration = isRunning ? .seconds(30) : .seconds(1)
+            let pause: Duration = switch state {
+            case .running: .seconds(30)
+            // An admin may take a while; there is no hurry to notice.
+            case .awaitingApproval: .seconds(5)
+            default: .seconds(1)
+            }
             try? await Task.sleep(for: pause)
         }
     }
@@ -292,10 +321,10 @@ public final class EmbeddedTailnet {
         if await Self.isListening(loopback) { return loopback }
         await stopNode()
         start()
-        // Wait out the restart: a saved login runs again within seconds.
+        // Wait out the restart: a saved login is back within seconds.
         for _ in 0..<20 {
             try? await Task.sleep(for: .milliseconds(500))
-            if isRunning, let fresh = self.loopback { return fresh }
+            if state != .starting, let fresh = self.loopback { return fresh }
         }
         return nil
     }

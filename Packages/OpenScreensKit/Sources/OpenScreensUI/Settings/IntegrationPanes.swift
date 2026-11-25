@@ -187,7 +187,7 @@ private struct EmbeddedTailnetSection: View {
 
     /// Where to sign in while a sign-in this pane started is waiting for it.
     private var loginURL: URL? {
-        guard isSigningIn, case .needsLogin(let url) = tailnet.state else { return nil }
+        guard isSigningIn, case .needsLogin(let url?) = tailnet.state else { return nil }
         return url
     }
 
@@ -200,26 +200,20 @@ private struct EmbeddedTailnetSection: View {
             }
             switch tailnet.state {
             case .signedOut, .failed:
-                Button("Sign In to Tailscale") {
-                    isSigningIn = true
-                    tailnet.signIn()
-                }
-            case .starting, .needsLogin:
-                Button("Cancel Sign-In", role: .destructive) {
-                    isSigningIn = false
-                    Task { await tailnet.signOut() }
-                }
-            case .running:
-                Button("Sign Out", role: .destructive) {
-                    Task {
-                        await tailnet.signOut()
-                        await model.tailscale.refresh()
-                    }
-                }
+                signInButton("Sign In to Tailscale")
+            case .needsLogin:
+                // First sign-in, or the device's key expired.
+                signInButton(tailnet.hasBeenSignedIn && !isSigningIn ? "Sign In Again" : "Sign In to Tailscale")
+                signOutButton
+            case .starting, .awaitingApproval, .running:
+                signOutButton
             }
         } header: {
             Text("Tailscale in OpenScreens")
         } footer: {
+            if tailnet.state == .awaitingApproval {
+                Text("Your tailnet asks an admin to approve new devices. Once OpenScreens is approved in the Tailscale admin console, it connects by itself.")
+            }
             Text("Connects to the computers in your tailnet without the Tailscale app or its VPN. OpenScreens joins your tailnet as a device of its own. High Performance screen sharing is not available through it, because its picture travels over UDP and this connection carries TCP only.")
         }
         // A change of address, or the sign-in finishing, ends the page that
@@ -231,16 +225,41 @@ private struct EmbeddedTailnetSection: View {
                     using: loginURL, callback: .customScheme("openscreens-tailscale"),
                     preferredBrowserSession: .shared, additionalHeaderFields: [:])
             } catch {
-                // Closed by the user before signing in: give up the attempt.
-                guard !Task.isCancelled, !tailnet.isRunning else { return }
-                isSigningIn = false
-                await tailnet.signOut()
+                // Closed before signing in. The node keeps waiting; signing
+                // in again or out is up to the buttons.
+                if !Task.isCancelled {
+                    isSigningIn = false
+                }
             }
         }
-        .onChange(of: tailnet.isRunning) { _, isRunning in
-            guard isRunning else { return }
+        .onChange(of: tailnet.state) { _, state in
+            switch state {
+            case .running:
+                isSigningIn = false
+                Task { await model.tailscale.refresh() }
+            case .awaitingApproval:
+                // Signed in; the page has nothing more to do.
+                isSigningIn = false
+            default:
+                break
+            }
+        }
+    }
+
+    private func signInButton(_ title: String) -> some View {
+        Button(title) {
+            isSigningIn = true
+            Task { await tailnet.signIn() }
+        }
+    }
+
+    private var signOutButton: some View {
+        Button("Sign Out", role: .destructive) {
             isSigningIn = false
-            Task { await model.tailscale.refresh() }
+            Task {
+                await tailnet.signOut()
+                await model.tailscale.refresh()
+            }
         }
     }
 
@@ -248,7 +267,8 @@ private struct EmbeddedTailnetSection: View {
         switch tailnet.state {
         case .signedOut: "Signed out"
         case .starting: "Connecting…"
-        case .needsLogin: "Waiting for sign-in…"
+        case .needsLogin: tailnet.hasBeenSignedIn && !isSigningIn ? "Signed out by Tailscale — sign in again" : "Waiting for sign-in…"
+        case .awaitingApproval: "Waiting for approval"
         case .running(let name): name.isEmpty ? "Connected" : "Connected to \(name)"
         case .failed(let message): message
         }
